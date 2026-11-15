@@ -562,15 +562,34 @@ function connect() {
             }
 
             // 🌟 有人说话就重置"被冷落"计数，并且 10 分钟内不主动插嘴
-            if (chatId) {
-                lastHumanAt = Date.now();
-                try { db.prepare('UPDATE proactive SET streak = 0 WHERE id = 1').run(); } catch (e) {}
-            }
+if (chatId) {
+    lastHumanAt = Date.now();
+    try { db.prepare('UPDATE proactive SET streak = 0 WHERE id = 1').run(); } catch (e) {}
+}
 
-            if (!isGroup || isAtMe) {
-                text = text.trim();
-                
-                if (text.includes('bilibili.com') || text.includes('b23.tv')) {
+// 🌟 全局拦截 #LouFung 状态查询指令（群聊私聊通用，群聊免@）
+text = text.trim();
+if (text === '#LouFung') {
+    console.log('⚡ [指令触发] 收到 #LouFung，正在获取红米状态...');
+    try {
+        const sysRes = await fetch('http://127.0.0.1:3000/api/tools/sysinfo');
+        const sysData = await sysRes.json();
+        const sysStatus = sysData.status || '获取失败';
+
+        // 直接发送格式化好的多行文本
+        const action = isGroup ? 'send_group_msg' : 'send_private_msg';
+        const params = isGroup ? { group_id: data.group_id, message: sysStatus } : { user_id: senderQQ, message: sysStatus };
+        ws.send(JSON.stringify({ action, params }));
+        console.log(`[小c 状态汇报] 已发送`);
+    } catch (err) {
+        console.error('❌ 获取状态失败:', err.message);
+    }
+    return; // 拦截，不往下走
+}
+
+if (!isGroup || isAtMe) {
+    text = text.trim();
+    if (text.includes('bilibili.com') || text.includes('b23.tv')) {
                     const biliData = await parseBilibiliLink(text);
                     if (biliData) {
                         text += `\n\n${biliData.infoText}`;

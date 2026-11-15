@@ -244,15 +244,53 @@ const server = http.createServer((req, res) => {
     }
     
     if (req.url === '/api/tools/sysinfo' && req.method === 'GET') {
-        const { exec } = require('child_process');
-        const cmd = "df -h /data | tail -1 | awk '{print \"存储剩余: \" $4}'; free -m | grep Mem | awk '{print \"内存剩余: \" $4 \" MB\"}'; cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk '{print \"CPU温度: \" $1/1000 \" ℃\"}'";
-        exec(cmd, (error, stdout) => {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            if (error) return res.end(JSON.stringify({ error: error.message }));
-            res.end(JSON.stringify({ status: stdout.trim().replace(/\n+/g, ' | ') }));
-        });
-        return;
-    }
+    const { exec } = require('child_process');
+    const os = require('os');
+    
+    // 1. 计算 Node.js 进程存活时长
+    const uptimeSeconds = Math.floor(process.uptime());
+    const days = Math.floor(uptimeSeconds / 86400);
+    const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+
+    // 2. 动态读取 server.js 的最后修改时间作为版本号 (格式: vYYYYMMDD)
+    let versionStr = 'v20261115';
+    try {
+        const stats = fs.statSync(__filename);
+        const mtime = stats.mtime;
+        const year = mtime.getFullYear();
+        const month = String(mtime.getMonth() + 1).padStart(2, '0');
+        const day = String(mtime.getDate()).padStart(2, '0');
+        versionStr = `v${year}${month}${day}`;
+    } catch (e) {}
+
+    // 3. 精准提取存储和可用内存 (无温度)
+    const cmd = `df -h /data | tail -1 | awk '{print $4}'; ` +
+                `grep MemAvailable /proc/meminfo | awk '{printf "%.1f", $2/1024/1024}'`;
+    
+    exec(cmd, (error, stdout) => {
+        let storage = '未知', memory = '未知';
+        if (!error && stdout) {
+            const lines = stdout.trim().split('\n');
+            storage = lines[0] || '未知';
+            memory = lines[1] || '未知';
+        }
+
+        // 4. 生成最终的多行文本 (严格按照图二排版，无 Emoji)
+        const sysStatus = `CiveBot 状态\n` +
+                            `姓名: 小c（刺猬）\n` + 
+                          `版本: ${versionStr}\n` +
+                          `平台: Redmi K60 Pro (MIUI14 / ${os.arch()})\n` +
+                          `环境: Termux / Node.js ${process.version}\n` +
+                          `存储剩余: ${storage}B(512GB)\n` +
+                          `可用内存: ${memory} GB (12GB)\n` +
+                          `运行时长: ${days}天 ${hours}小时 ${minutes}分钟`;
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: sysStatus }));
+    });
+    return;
+}
 
     if (req.url === '/api/journal' && req.method === 'GET') {
         try {
