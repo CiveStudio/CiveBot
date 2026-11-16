@@ -1,5 +1,8 @@
 # My Diary
 
+## [v261116] - 2026-11-16
+### 这傻波一DeepSeek差点把我的cloudflare tunnel的环境搞掉，好在后面修好了。
+
 ## [v261114] - 2026-11-14
 ### 把代码里写死的QQ号给抽成了.env，补了开源协议。
 ### 将组织名从CiweiStudio更名为CiveStudio，项目仓库名从CiweiPet更名为CiveBot。“Cive”同“Civi”同汉语拼音“刺猬ciwei”。
