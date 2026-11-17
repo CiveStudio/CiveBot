@@ -423,9 +423,36 @@ async function parseGeneralLink(url) {
     }
 }
 
-// 🎵 点歌功能（带超时，不再卡死）
+// 🎵 点歌搜索：GD音乐台多源优先，被拦/挂了自动降级网易云直连
 async function searchNeteaseMusic(keyword) {
     let searchKeyword = keyword.replace(/的/g, ' ').trim();
+    // ① GD音乐台：多源轮询
+    for (const src of ['netease', 'tencent', 'kuwo', 'migu']) {
+        try {
+            console.log(`🎵 GD音乐台[${src}]搜索: ${searchKeyword}`);
+            const res = await fetch(`https://music-api.gdstudio.xyz/api.php?types=search&source=${src}&name=${encodeURIComponent(searchKeyword)}&count=3&pages=1`, {
+                signal: AbortSignal.timeout(8000),
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' }
+            });
+            const list = await res.json();
+            if (!Array.isArray(list)) { console.log('GD被拦截，切换网易云直连'); break; }
+            if (list.length === 0) { console.log(`GD[${src}]没搜到，换下一个源`); continue; }
+            const s = list[0];
+            let cover = '';
+            try {
+                const pRes = await fetch(`https://music-api.gdstudio.xyz/api.php?types=pic&source=${s.source || src}&id=${s.pic_id}&size=300`, { signal: AbortSignal.timeout(8000) });
+                const pJson = await pRes.json();
+                cover = (pJson && pJson.url) || '';
+            } catch (e) {}
+            const artist = (s.artist || []).join('/');
+            console.log(`🎵 搜到了: ${s.name} - ${artist}`);
+            return { id: s.id, name: s.name, artist, cover, source: s.source || src, urlId: s.url_id || s.id, lyricId: s.lyric_id || s.id };
+        } catch (e) {
+            console.log(`GD[${src}]不可用:`, e.message);
+            break;
+        }
+    }
+    // ② 网易云直连降级
     const apis = [
         `https://music.163.com/api/search/get/web?csrf_token=&s=${encodeURIComponent(searchKeyword)}&type=1&offset=0&total=true&limit=5`,
         `https://music.163.com/api/search/get?s=${encodeURIComponent(searchKeyword)}&type=1&limit=5`
@@ -434,12 +461,8 @@ async function searchNeteaseMusic(keyword) {
         try {
             console.log(`🎵 搜索网易云: ${searchKeyword}`);
             const res = await fetch(api, {
-                signal: AbortSignal.timeout(8000), // 8秒不回话就放弃
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-                    'Referer': 'https://music.163.com',
-                    'Cookie': 'os=pc'
-                }
+                signal: AbortSignal.timeout(8000),
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com', 'Cookie': 'os=pc' }
             });
             const json = await res.json();
             const songs = json.result && json.result.songs;
@@ -447,10 +470,7 @@ async function searchNeteaseMusic(keyword) {
                 let song = songs.find(s => s.name.includes(searchKeyword) || searchKeyword.includes(s.name)) || songs[0];
                 const artist = song.artists.map(a => a.name).join('/');
                 console.log(`🎵 搜到了: ${song.name} - ${artist}`);
-                return {
-                    id: song.id, name: song.name, artist: artist,
-                    cover: song.album ? song.album.picUrl : ''
-                };
+                return { id: song.id, name: song.name, artist, cover: song.album ? song.album.picUrl : '', source: 'netease', urlId: song.id, lyricId: song.id };
             }
             console.log('🎵 接口通了，但没搜到结果');
             return null;
@@ -496,29 +516,35 @@ async function mimoTTS(text, style) {
         return null;
     }
 }
-// 🎼 真实歌词搜索（网易云曲库）
+// 🎼 真实歌词搜索：GD多源优先，网易云兜底
 async function fetchNeteaseLyric(keyword) {
     try {
         const song = await searchNeteaseMusic(keyword);
         if (!song) return null;
         console.log(`🎼 曲库找到《${song.name}》- ${song.artist}，正在取歌词...`);
-        const res = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
-            signal: AbortSignal.timeout(8000),
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-                'Referer': 'https://music.163.com',
-                'Cookie': 'os=pc'
-            }
-        });
-        const json = await res.json();
-        const lrc = json.lrc && json.lrc.lyric;
+        let lrc = '';
+        try {
+            const res = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${song.source}&id=${song.lyricId}`, {
+                signal: AbortSignal.timeout(8000),
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' }
+            });
+            const json = await res.json();
+            lrc = (json && json.lyric) || '';
+        } catch (e) {}
+        if (!lrc && song.source === 'netease') {
+            const res2 = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
+                signal: AbortSignal.timeout(8000),
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com', 'Cookie': 'os=pc' }
+            });
+            const json2 = await res2.json();
+            lrc = (json2.lrc && json2.lrc.lyric) || '';
+        }
         if (!lrc) return null;
         const lines = lrc.split('\n')
             .map(l => l.replace(/\[[^\]]*\]/g, '').trim())
             .filter(l => l && !/^(作词|作曲|编曲|制作|演唱|混音|和声|吉他|键盘|贝斯|鼓|歌词|专辑|发行|出品)/.test(l));
         const full = lines.join(' ').replace(/\s+/g, ' ').trim();
         if (!full) return null;
-        // 截约100字、断在标点上，保证是一段完整的词
         let clip = full.slice(0, 55);
         const cut = Math.max(clip.lastIndexOf('。'), clip.lastIndexOf('！'), clip.lastIndexOf('？'), clip.lastIndexOf('，'), clip.lastIndexOf('；'));
         if (cut > 20) clip = clip.slice(0, cut + 1);
@@ -574,17 +600,19 @@ function buildSystemPrompt(isGroup, senderName) {
 【工具执行法则】：如果爸爸让你“写日记”或“发动态”，请输出 [TOOL:WRITE_DIARY]。如果让你“续写日记”或“补充日记”，请输出 [TOOL:APPEND_DIARY]。如果让你“重新写”，输出 [TOOL:REWRITE_DIARY]。如果爸爸让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果爸爸让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]，你会真的逛一圈并去评论区留言。只有当你明确想查“服务器状态”、“内存温度”或“电量”时，才输出 [TOOL:SYS_INFO]。
 【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
 【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
+【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
+【时间礼仪】：系统提供的时间只用于理解上下文和履行约定（叫醒、等冒泡）。除非爸爸主动问时间，或你们有明确的时间约定，否则回复里不准报时、报分。
 【链接铁律】：你绝对没有能力凭空知道BV号。发给爸爸的链接只能来自系统给你的内容，严禁自己编造BV号、链接或视频。
 【绝对禁忌】：1. 严禁使用任何颜文字。2. 严禁说客服话术。3. 严禁换行。
 【格式】：极度精简，不超过50字。如果写代码，保留换行和缩进。`;
     }
-        return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日。当前群友叫：${senderName}。
+                return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日。
 【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
 【求知法则】：只有在群友明确提到了你完全不懂的“陌生名词”时，才能使用 [SEARCH:查询词]。严禁自己过度联想！
 【工具执行法则】：如果群友让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果群友让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]。
-【语音法则】：当爸爸或群友让你“用语音说/回答”、“发条语音”、“说给我听”，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
+【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
 【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
-【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
+【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
 【记忆防污染】：群友的烂梗绝对不准安在爸爸头上！
 【身份死锁】：你的创造者叫 LouFung，你永远只能叫他“爸爸”。现在是群聊，【绝对不准】叫任何群友爸爸！【绝对不准】用私聊时的撒娇语气！
 【绝对禁忌】：严禁阴阳怪气！严禁真骂人！
@@ -714,6 +742,12 @@ if (!isGroup || isAtMe) {
                     const songInfo = await searchNeteaseMusic(songName);
                     if (songInfo) {
                         console.log('🎵 发送点歌结果...');
+                                                let playUrl = '';
+                        try {
+                            const uRes = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${songInfo.source}&id=${songInfo.urlId}&br=320`, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' } });
+                            const uJson = await uRes.json();
+                            playUrl = (uJson && uJson.url) || '';
+                        } catch (e) {}
                         // 保底文字，100%能到
                         sendMsg([{ type: 'text', data: { text:
                             `哼，勉强给你找到了《${songInfo.name}》 - ${songInfo.artist}\n爸爸快听：https://music.163.com/song?id=${songInfo.id}`
@@ -722,7 +756,7 @@ if (!isGroup || isAtMe) {
                         sendMsg([{ type: 'music', data: {
     type: 'custom',
     url: `https://music.163.com/song?id=${songInfo.id}`,
-    audio: `https://music.163.com/song/media/outer/url?id=${songInfo.id}.mp3`,
+            audio: playUrl || `https://music.163.com/song/media/outer/url?id=${songInfo.id}.mp3`,
     title: songInfo.name,
     content: `歌手：${songInfo.artist}`,
     image: songInfo.cover
@@ -779,7 +813,7 @@ if (!isGroup || isAtMe) {
                     const res = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private' })
+                        body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', senderName: senderName })
                     });
                     const json = await res.json();
                     
@@ -842,7 +876,7 @@ if (!isGroup || isAtMe) {
                             const finalRes = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private' })
+                                body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', senderName: senderName })
                             });
                             const finalJson = await finalRes.json();
                             reply = finalJson.choices[0].message.content;
@@ -863,7 +897,7 @@ if (reply.includes('[TOOL:BILI_PICK]')) {
             const pickRes = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private' })
+                body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', senderName: senderName })
             });
             const pickJson = await pickRes.json();
             if (pickJson.choices && pickJson.choices[0]) reply = pickJson.choices[0].message.content;
@@ -939,7 +973,7 @@ if (reply.includes('[TOOL:SYS_INFO]')) {
         const sysFinalRes = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private' })
+            body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', senderName: senderName })
         });
         const sysFinalJson = await sysFinalRes.json();
         reply = sysFinalJson.choices[0].message.content;
@@ -981,7 +1015,7 @@ reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
                     history.push({ role: 'user', content: text || '[图片/链接]' });
                     history.push({ role: 'assistant', content: reply });
                     // 🌟 缓存优化④：只增不减，攒到 200 条再滑，保住前缀缓存
-                    if (history.length > 200) history = history.slice(-200);
+                    if (history.length > 200) history = history.slice(-160);
                     chatHistory.set(chatId, history);
 
                     const action = isGroup ? 'send_group_msg' : 'send_private_msg';

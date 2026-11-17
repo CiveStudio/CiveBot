@@ -282,7 +282,7 @@ const server = http.createServer((req, res) => {
                           `版本: ${versionStr}\n` +
                           `平台: Redmi K60 Pro(${os.arch()})\n` +
                           `环境: Termux / Node.js ${process.version}\n` +
-                          `模型: GLM-5.3-Flash \n` +
+                          `模型: GLM-5.3-Flashx \n` +
                           `存储剩余: ${storage}B(512GB)\n` +
                           `可用内存: ${memory} GB (12GB)\n` +
                           `运行时长: ${days}天 ${hours}小时 ${minutes}分钟`;
@@ -320,12 +320,13 @@ const server = http.createServer((req, res) => {
                 let provider = apiConfig.providers[0];
                 const payload = JSON.parse(body);
                 const messages = payload.messages || [];
-                
+                let dynamicTail = '';
                 let ragContext = '';
                 try {
                     const isGroupChat = payload.channel === 'qq_group';
                     const recentJournals = db.prepare('SELECT content FROM journals ORDER BY id DESC LIMIT 2').all();
                     let memoryText = (!isGroupChat && recentJournals.length > 0) ? "【回忆日记（日记里的主人就是爸爸）】：" + recentJournals.map(j => j.content).join('\n') : '';
+                    if (memoryText) messages.splice(1, 0, { role: 'system', content: memoryText });
                     let moodRow = db.prepare('SELECT mood FROM pet_status WHERE id = 1').get();
                     let currentMood = moodRow ? moodRow.mood : 80;
                     let moodDesc = currentMood > 70 ? '开心粘人' : (currentMood > 40 ? '一般般' : '极度委屈且高冷');
@@ -335,10 +336,9 @@ const server = http.createServer((req, res) => {
                         ragContext = getDeepRAGContext(lastMsg.content);
                     }
 
-                    // 🌟 缓存优化①：system 里只留稳定内容（日记+情绪），RAG 挪走，保住前缀缓存
-                    if (messages.length > 0 && messages[0].role === 'system') {
-                        messages[0].content += `\n${memoryText}\n【当前情绪状态】：${moodDesc}。如果情绪极度委屈，请保持冷漠，群聊回复不超过5个字。`;
-                    }
+                                        // 🌟 缓存优化①v2：system 一字不动！日记+情绪+群友身份全下沉到尾部
+                                        dynamicTail = (isGroupChat && payload.senderName ? `\n【当前和你说话的群友】：${payload.senderName}` : '')
+                        + `\n【当前情绪状态】：${moodDesc}。如果情绪极度委屈，请保持冷漠，群聊回复不超过5个字。`;
                 } catch(e) {}
 
                 const tn = new Date();
@@ -349,11 +349,12 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                     // 🌟 缓存优化②：时间 + RAG 这些每轮都变的，全部拼在最后一条消息的尾部
                     if (typeof lastUserMsg.content === 'string') {
                         userContent = lastUserMsg.content;
-                        lastUserMsg.content = `【现在是：${timeStr}】\n` + userContent + (ragContext ? `\n${ragContext}` : '');
+                        lastUserMsg.content = `【系统时间（不必提及）：${timeStr}】\n` + userContent + (ragContext ? `\n${ragContext}` : '') + dynamicTail;
                     } else if (Array.isArray(lastUserMsg.content)) {
                         userContent = '[图片/多媒体]';
-                        lastUserMsg.content.unshift({ type: 'text', text: `【现在是：${timeStr}】\n` });
+                        lastUserMsg.content.unshift({ type: 'text', text: `【系统时间（不必提及）：${timeStr}】\n` });
                         if (ragContext) lastUserMsg.content.push({ type: 'text', text: ragContext });
+                        if (dynamicTail) lastUserMsg.content.push({ type: 'text', text: dynamicTail });
                     }
                 }
 
@@ -374,6 +375,8 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                                 throw new Error('云端返回异常，可能 API Key 错误或欠费');
                             }
 
+                            const u = aiJson.usage || {};
+                            console.log(`💰 缓存命中: ${u.prompt_cache_hit_tokens || 0} / 输入共 ${(u.prompt_cache_hit_tokens || 0) + (u.prompt_cache_miss_tokens || 0)} tokens`);
                             const replyContent = aiJson.choices[0].message.content;
                                                         const memoryContent = String(replyContent || '')
                                 .replace(/\[SING[:：]\s*([^\]]+)\]/g, '(给爸爸唱了一小段：$1)')
@@ -432,7 +435,10 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                         ragContext = getDeepRAGContext(lastMsg.content);
                     }
 
-                    messages.splice(1, 0, { role: 'system', content: `${memoryText}\n${ragContext}\n【当前情绪状态】：${moodDesc} (数值:${currentMood}/100)` });
+                    const lastWebUser = messages.filter(m => m.role === 'user').pop();
+                    if (lastWebUser && typeof lastWebUser.content === 'string') {
+                        lastWebUser.content += `\n${memoryText}${ragContext ? '\n' + ragContext : ''}\n【当前情绪状态】：${moodDesc} (数值:${currentMood}/100)`;
+                    }
                     if (currentMood < 100) db.prepare('UPDATE pet_status SET mood = mood + 2 WHERE id = 1').run();
                 } catch(e) {}
 
