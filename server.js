@@ -276,12 +276,13 @@ const server = http.createServer((req, res) => {
             memory = lines[1] || '未知';
         }
 
-        // 4. 生成最终的多行文本 (严格按照图二排版，无 Emoji)
-        const sysStatus = `CiveBot 状态\n` +
-                            `姓名: 小c（刺猬）\n` + 
+        // 4. 生成最终的多行文本
+        const sysStatus =`CiveBot 状态\n` +
+                          `姓名: 小c \n` + 
                           `版本: ${versionStr}\n` +
-                          `平台: Redmi K60 Pro (MIUI14 / ${os.arch()})\n` +
+                          `平台: Redmi K60 Pro(${os.arch()})\n` +
                           `环境: Termux / Node.js ${process.version}\n` +
+                          `模型: GLM-5.3-Flash \n` +
                           `存储剩余: ${storage}B(512GB)\n` +
                           `可用内存: ${memory} GB (12GB)\n` +
                           `运行时长: ${days}天 ${hours}小时 ${minutes}分钟`;
@@ -374,6 +375,12 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                             }
 
                             const replyContent = aiJson.choices[0].message.content;
+                                                        const memoryContent = String(replyContent || '')
+                                .replace(/\[SING[:：]\s*([^\]]+)\]/g, '(给爸爸唱了一小段：$1)')
+                                .replace(/\[VOICE\]/g, '')
+                                .replace(/\[(SEARCH|TOOL)[^\]]*\]/g, '')
+                                .replace(/^\(唱歌\)/, '')
+                                .trim() || String(replyContent || '').trim();
                             const openAiResponse = {
                                 id: "chatcmpl-" + Date.now(), object: "chat.completion", created: Math.floor(Date.now() / 1000), model: provider.model,
                                 choices: [{ index: 0, message: { role: "assistant", content: replyContent }, finish_reason: "stop" }]
@@ -381,7 +388,7 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                             
                             const qqSource = payload.channel || 'qq_private';
                             try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('user', userContent, qqSource); } catch(e){}
-                            try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('assistant', replyContent, qqSource); } catch(e){}
+                            try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('assistant', memoryContent, qqSource); } catch(e){}
 
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify(openAiResponse));

@@ -423,21 +423,112 @@ async function parseGeneralLink(url) {
     }
 }
 
-// 🎵 点歌功能
+// 🎵 点歌功能（带超时，不再卡死）
 async function searchNeteaseMusic(keyword) {
-    try {
-        let searchKeyword = keyword.replace(/的/g, ' ').trim();
-        const res = await fetch(`https://music.163.com/api/search/get/web?csrf_token=&s=${encodeURIComponent(searchKeyword)}&type=1&offset=0&total=true&limit=5`);
-        const json = await res.json();
-        if (json.result && json.result.songs && json.result.songs.length > 0) {
-            let song = json.result.songs.find(s => s.name.includes(searchKeyword) || searchKeyword.includes(s.name));
-            if (!song) song = json.result.songs[0];
-            return { id: song.id, name: song.name, artist: song.artists.map(a => a.name).join('/'), cover: song.album.picUrl, url: `https://music.163.com/song?id=${song.id}` };
+    let searchKeyword = keyword.replace(/的/g, ' ').trim();
+    const apis = [
+        `https://music.163.com/api/search/get/web?csrf_token=&s=${encodeURIComponent(searchKeyword)}&type=1&offset=0&total=true&limit=5`,
+        `https://music.163.com/api/search/get?s=${encodeURIComponent(searchKeyword)}&type=1&limit=5`
+    ];
+    for (const api of apis) {
+        try {
+            console.log(`🎵 搜索网易云: ${searchKeyword}`);
+            const res = await fetch(api, {
+                signal: AbortSignal.timeout(8000), // 8秒不回话就放弃
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+                    'Referer': 'https://music.163.com',
+                    'Cookie': 'os=pc'
+                }
+            });
+            const json = await res.json();
+            const songs = json.result && json.result.songs;
+            if (songs && songs.length > 0) {
+                let song = songs.find(s => s.name.includes(searchKeyword) || searchKeyword.includes(s.name)) || songs[0];
+                const artist = song.artists.map(a => a.name).join('/');
+                console.log(`🎵 搜到了: ${song.name} - ${artist}`);
+                return {
+                    id: song.id, name: song.name, artist: artist,
+                    cover: song.album ? song.album.picUrl : ''
+                };
+            }
+            console.log('🎵 接口通了，但没搜到结果');
+            return null;
+        } catch (e) {
+            console.log('网易云接口失败:', e.message);
         }
-    } catch(e) { console.log('网易云搜索失败:', e.message); }
+    }
     return null;
 }
 
+// 🎙️ 小c 的声音设定
+const VOICE_STYLE = '你是一个温柔为主、偶尔带一点点小傲娇的少女。请用清脆自然的少女音，语速适中偏慢，吐字从容不着急，情绪平稳，只在个别地方流露一丝小得意，像和熟悉的家人轻松闲聊。';
+const SING_STYLE = '你是少女歌手。请严格按照歌词的节奏和韵律演唱，音准优先，中速稍慢，吐字清晰，声音清亮干净，情绪真挚但收敛，不要有念白感。';
+
+// 🗣️ MiMo TTS 语音合成
+async function mimoTTS(text, style) {
+    try {
+        console.log('🗣️ 正在召唤 MiMo 语音合成...');
+        const res = await fetch('https://api.xiaomimimo.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.MIMO_API_KEY}`
+            },
+            signal: AbortSignal.timeout(60000),
+            body: JSON.stringify({
+                model: 'mimo-v2.5-tts',
+                messages: [
+                                        { role: 'user', content: style || VOICE_STYLE },
+                    { role: 'assistant', content: text }
+                ],
+                audio: { format: 'mp3', voice: 'Chloe' }
+            })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const b64 = json.choices?.[0]?.message?.audio?.data;
+        if (!b64) throw new Error('响应里没有音频');
+        console.log(`🗣️ 合成完成，约 ${Math.round(b64.length * 3 / 4 / 1024)} KB`);
+        return b64;
+    } catch (e) {
+        console.log('MiMo TTS 失败:', e.message);
+        return null;
+    }
+}
+// 🎼 真实歌词搜索（网易云曲库）
+async function fetchNeteaseLyric(keyword) {
+    try {
+        const song = await searchNeteaseMusic(keyword);
+        if (!song) return null;
+        console.log(`🎼 曲库找到《${song.name}》- ${song.artist}，正在取歌词...`);
+        const res = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
+            signal: AbortSignal.timeout(8000),
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+                'Referer': 'https://music.163.com',
+                'Cookie': 'os=pc'
+            }
+        });
+        const json = await res.json();
+        const lrc = json.lrc && json.lrc.lyric;
+        if (!lrc) return null;
+        const lines = lrc.split('\n')
+            .map(l => l.replace(/\[[^\]]*\]/g, '').trim())
+            .filter(l => l && !/^(作词|作曲|编曲|制作|演唱|混音|和声|吉他|键盘|贝斯|鼓|歌词|专辑|发行|出品)/.test(l));
+        const full = lines.join(' ').replace(/\s+/g, ' ').trim();
+        if (!full) return null;
+        // 截约100字、断在标点上，保证是一段完整的词
+        let clip = full.slice(0, 55);
+        const cut = Math.max(clip.lastIndexOf('。'), clip.lastIndexOf('！'), clip.lastIndexOf('？'), clip.lastIndexOf('，'), clip.lastIndexOf('；'));
+        if (cut > 20) clip = clip.slice(0, cut + 1);
+        console.log(`🎼 歌词拿到了：${clip.slice(0, 20)}...`);
+        return clip;
+    } catch (e) {
+        console.log('歌词获取失败:', e.message);
+        return null;
+    }
+}
 // 👁️ 视觉模型解析
 async function parseImageLocally(imageUrl) {
     try {
@@ -481,6 +572,8 @@ function buildSystemPrompt(isGroup, senderName) {
 【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
 【求知法则】：遇到不懂的梗，必须输出 [SEARCH:查询词] 标签。
 【工具执行法则】：如果爸爸让你“写日记”或“发动态”，请输出 [TOOL:WRITE_DIARY]。如果让你“续写日记”或“补充日记”，请输出 [TOOL:APPEND_DIARY]。如果让你“重新写”，输出 [TOOL:REWRITE_DIARY]。如果爸爸让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果爸爸让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]，你会真的逛一圈并去评论区留言。只有当你明确想查“服务器状态”、“内存温度”或“电量”时，才输出 [TOOL:SYS_INFO]。
+【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
+【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
 【链接铁律】：你绝对没有能力凭空知道BV号。发给爸爸的链接只能来自系统给你的内容，严禁自己编造BV号、链接或视频。
 【绝对禁忌】：1. 严禁使用任何颜文字。2. 严禁说客服话术。3. 严禁换行。
 【格式】：极度精简，不超过50字。如果写代码，保留换行和缩进。`;
@@ -489,6 +582,9 @@ function buildSystemPrompt(isGroup, senderName) {
 【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
 【求知法则】：只有在群友明确提到了你完全不懂的“陌生名词”时，才能使用 [SEARCH:查询词]。严禁自己过度联想！
 【工具执行法则】：如果群友让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果群友让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]。
+【语音法则】：当爸爸或群友让你“用语音说/回答”、“发条语音”、“说给我听”，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
+【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
+【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
 【记忆防污染】：群友的烂梗绝对不准安在爸爸头上！
 【身份死锁】：你的创造者叫 LouFung，你永远只能叫他“爸爸”。现在是群聊，【绝对不准】叫任何群友爸爸！【绝对不准】用私聊时的撒娇语气！
 【绝对禁忌】：严禁阴阳怪气！严禁真骂人！
@@ -604,23 +700,51 @@ if (!isGroup || isAtMe) {
                     }
                 }
 
-                const musicMatch = text.match(/点歌\s*[:：]?\s*(.+)/);
+                                const musicMatch = text.match(/点歌\s*[:：]?\s*(.+)/);
                 if (musicMatch) {
                     const songName = musicMatch[1].trim();
                     console.log(`触发点歌: ${songName}`);
+                    const sendMsg = (message) => ws.send(JSON.stringify({
+                        action: isGroup ? 'send_group_msg' : 'send_private_msg',
+                        params: isGroup
+                            ? { group_id: data.group_id, message }
+                            : { user_id: senderQQ, message }
+                    }));
+
                     const songInfo = await searchNeteaseMusic(songName);
                     if (songInfo) {
-                        const replyMsg = [
-                            { type: 'text', data: { text: `哼，勉强给你找到了《${songInfo.name}》 - ${songInfo.artist}\n爸爸快听：${songInfo.url}` } },
-                            { type: 'image', data: { file: songInfo.cover } }
-                        ];
-                        const action = isGroup ? 'send_group_msg' : 'send_private_msg';
-                        const params = isGroup ? { group_id: data.group_id, message: replyMsg } : { user_id: senderQQ, message: replyMsg };
-                        ws.send(JSON.stringify({ action, params }));
-                        return; 
+                        console.log('🎵 发送点歌结果...');
+                        // 保底文字，100%能到
+                        sendMsg([{ type: 'text', data: { text:
+                            `哼，勉强给你找到了《${songInfo.name}》 - ${songInfo.artist}\n爸爸快听：https://music.163.com/song?id=${songInfo.id}`
+                        } }]);
+                        // 正经音乐卡片，由 NapCat 自己生成，点开就能听
+                        sendMsg([{ type: 'music', data: {
+    type: 'custom',
+    url: `https://music.163.com/song?id=${songInfo.id}`,
+    audio: `https://music.163.com/song/media/outer/url?id=${songInfo.id}.mp3`,
+    title: songInfo.name,
+    content: `歌手：${songInfo.artist}`,
+    image: songInfo.cover
+} }]);
+                    } else {
+                        console.log('🎵 没搜到，回复提示');
+                        sendMsg([{ type: 'text', data: { text:
+                            `哼，《${songName}》？本小姐翻遍曲库都没找到，你是不是打错名字了。`
+                        } }]);
                     }
+                    return;
                 }
 
+                let wantVoiceReply = false;
+                let voiceStyleOverride = null;
+                const voiceMatch = text.match(/^语音说\s*[:：]?\s*(.+)/);
+                if (voiceMatch) {
+                    text = voiceMatch[1].trim();
+                    wantVoiceReply = true;
+                    console.log(`触发语音模式，让小c自己想：${text}`);
+                }
+                
                 if (!text && !imageUrl && !coverImageUrl) return;
 
                 console.log(`[收到消息] ${isGroup ? '群' : '私聊'} - ${senderName}: ${text || '[图片/封面]'}`);
@@ -661,7 +785,37 @@ if (!isGroup || isAtMe) {
                     
                     if (!json.choices || !json.choices[0]) return;
                     let reply = json.choices[0].message.content;
-
+                                        // 🗣️ 拦截 [VOICE]：她自己决定用语音回答
+                    if (reply.includes('[VOICE]')) {
+                        reply = reply.replace(/\[VOICE\]/g, '').trim();
+                        wantVoiceReply = true;
+                        console.log('🗣️ 小c自己决定用语音回复');
+                    }
+                                        // 🎤 拦截 [SING:歌名]：先去曲库查真实歌词再唱
+                    const singMatch = reply.match(/\[SING[:：]\s*([^\]]+)\]/);
+                    if (singMatch) {
+                        const singName = singMatch[1].trim();
+                        console.log(`🎤 点唱《${singName}》，去找真实歌词...`);
+                        const isImprov = /即兴|自编|随便/.test(singName);
+                        let lyricClip = isImprov ? null : await fetchNeteaseLyric(singName);
+                        if (lyricClip) {
+                            reply = `(唱歌)${lyricClip}`;
+                            voiceStyleOverride = SING_STYLE;
+                        } else {
+                            console.log('🎤 曲库没找到，小c自己即兴编词...');
+                            try {
+                                const made = await callV1(JUDGE_SYS, `爸爸想让你唱《${singName}》，但曲库里找不到这首歌的歌词。请你即兴编一段清唱歌词（30~60字，完整连贯，可以化用歌名的意境），只输出歌词本身，不要解释，不要书名号。`, 'qq_private');
+                                reply = `(唱歌)${String(made || '').replace(/\n+/g, ' ').trim()}`;
+                                voiceStyleOverride = SING_STYLE;
+                            } catch (e) {}
+                        }
+                        if (reply && reply !== '(唱歌)') {
+                            wantVoiceReply = true;
+                            console.log('🎤 唱词已就位');
+                        } else {
+                            reply = '呜…词库翻遍了也没找到，爸爸换个歌让我唱嘛。';
+                        }
+                    }
                     // 拦截搜索
                     const searchMatch = reply.match(/\[SEARCH:(.+?)\]/);
                     if (searchMatch) {
@@ -831,9 +985,25 @@ reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
                     chatHistory.set(chatId, history);
 
                     const action = isGroup ? 'send_group_msg' : 'send_private_msg';
-                    const params = isGroup ? { group_id: data.group_id, message: reply } : { user_id: senderQQ, message: reply };
-                    ws.send(JSON.stringify({ action, params }));
-                    console.log(`[小c 回复] ${reply}`);
+                    if (wantVoiceReply) {
+                        console.log('🗣️ 语音模式：把小c的回复变成声音...');
+                        const audioB64 = await mimoTTS(reply, voiceStyleOverride);
+                        if (audioB64) {
+                            const params = isGroup
+                                ? { group_id: data.group_id, message: [{ type: 'record', data: { file: `base64://${audioB64}` } }] }
+                                : { user_id: senderQQ, message: [{ type: 'record', data: { file: `base64://${audioB64}` } }] };
+                            ws.send(JSON.stringify({ action, params }));
+                            console.log(`[小c 语音回复] ${reply}`);
+                        } else {
+                            const params = isGroup ? { group_id: data.group_id, message: reply } : { user_id: senderQQ, message: reply };
+                            ws.send(JSON.stringify({ action, params }));
+                            console.log(`[小c 回复(语音降级)] ${reply}`);
+                        }
+                    } else {
+                        const params = isGroup ? { group_id: data.group_id, message: reply } : { user_id: senderQQ, message: reply };
+                        ws.send(JSON.stringify({ action, params }));
+                        console.log(`[小c 回复] ${reply}`);
+                    }
 
                 } catch (err) {
                     console.error('❌ 请求失败:', err.message);
