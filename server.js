@@ -283,7 +283,7 @@ const server = http.createServer((req, res) => {
                           `平台: Redmi K60 Pro(${os.arch()})\n` +
                           `底座: NapCat v4.18.41 \n` +
                           `环境: Termux / Node.js ${process.version}\n` +
-                          `模型: GLM-5.3-Flashx \n` +
+                          `模型: GLM-5.3-Flash-Event \n` +
                           `存储剩余: ${storage}B(512GB)\n` +
                           `可用内存: ${memory} GB (12GB)\n` +
                           `运行时长: ${days}天 ${hours}小时 ${minutes}分钟`;
