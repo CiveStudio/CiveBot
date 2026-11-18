@@ -21,14 +21,14 @@
 
 ```mermaid
 flowchart TB
-    QQ["QQ / QQ空间"] <--> NC["NapCat · OneBot v11 协议端"]
-    NC <--> BOT["qq-bot.js · 嘴巴与声带<br/>消息路由 / 标签拦截<br/>MiMo TTS / 点歌歌词 / B站引擎"]
-    BOT -- "本地HTTP :3000" --> SRV["server.js · 大脑<br/>Provider路由 / 记忆注入<br/>情绪系统 / 赛博日记"]
-    SRV <--> CLOUD["云端大模型<br/>SCNet GLM / 智谱 / DeepSeek"]
-    SRV -.->|云端全挂时降级| LOCAL["本地兜底<br/>8080 文本 MiniCPM<br/>8081 视觉 MiniCPM-V"]
-    WEB["网页端控制台 :3000"] --- SRV
-    CF["Cloudflare Tunnel<br/>免公网IP外部访问"] --- WEB
-    DB[("SQLite 记忆库<br/>全量对话 / 日记 / 情绪")] --- SRV
+    QQ["QQ / QQ空间"] <--> NC["NapCat<br/>OneBot v11"]
+    NC <--> BOT["qq-bot.js<br/>嘴巴与声带<br/>TTS / 点歌 / B站"]
+    BOT -->|"本地HTTP :3000"| SRV["server.js<br/>核心大脑<br/>记忆 / 情绪 / 日记"]
+    SRV <--> CLOUD["云端大模型<br/>多Provider可切换"]
+    SRV -.->|"云端全挂时降级"| LOCAL["本地兜底<br/>8080 文本<br/>8081 视觉"]
+    WEB["网页控制台 :3000"] --- SRV
+    CF["Cloudflare Tunnel"] --- WEB
+    DB[("SQLite 记忆库")] --- SRV
 ```
 
 **一次对话的完整旅程**：你在 QQ 发消息 → NapCat 转 OneBot 事件 → qq-bot.js 解析并做标签拦截 → server.js 挑选 Provider 调用大模型 → 回复写入 SQLite 记忆库 → 按 OneBot 段发回 QQ。中途模型可以下「标签指令」触发真实动作：搜索、点歌、语音、刷B站、写日记、查服务器——对话即操作。
@@ -37,7 +37,7 @@ flowchart TB
 
 基于纯原生 Node.js 构建，不依赖任何重型框架，五层容灾：
 
-1. **云端主脑（主力）**：多 Provider 路由——超算互联网 GLM 套餐 / 智谱 / DeepSeek 任意换位，改 `ai-config.json` 即热切换，无需重启。
+1. **云端主脑（主力）**：多 Provider 路由，任意 OpenAI 兼容接口均可接入，改 `ai-config.json` 即热切换，无需重启。
 2. **本地文本兜底（8080 端口）**：MiniCPM5-2B (llama.cpp)。云端 API 全挂或欠费时无缝接管，确保永远陪伴。
 3. **本地视觉之眼（8081 端口）**：MiniCPM-V 4.6。图片/动图先在本地转文字描述再上云，省 Token 且隐私零上传。
 4. **云端声带**：小米 MiMo-V2.5-TTS（OpenAI 兼容协议），人设专属声线剧本 + 歌手声线剧本双通道。
@@ -61,7 +61,7 @@ flowchart TB
 - **赛博日记**：每晚 23:30 自动通读当天聊天记录与情绪状态，用第一视角写日记入库并推送到 QQ 与 QQ 空间。
 
 ### 🛠️ Agent 工具与感知
-- **标签即操作**：`[SEARCH:xxx]` 联网搜索、`[TOOL:WRITE_DIARY]` 写日记并同步空间、`[TOOL:SYS_INFO]` 查红米服务器温度/内存/电量——模型输出标签，代码真实执行，杜绝幻觉链接。
+- **标签即操作**：`[SEARCH:xxx]` 联网搜索、`[TOOL:WRITE_DIARY]` 写日记并同步空间、`[TOOL:SYS_INFO]` 查服务器温度/内存/电量——模型输出标签，代码真实执行，杜绝幻觉链接。
 - **全网阅读**：微信公众号、知乎等正文抓取；打不开的链接自动降级交云端搜索。
 - **记忆系统**：SQLite 全量对话 + 跨天关键词 RAG + 日记注入，她会记得上周说过的话。
 
@@ -74,7 +74,7 @@ flowchart TB
 | `唱一段 [歌名]` | 真歌词清唱，曲库没有就即兴编词 |
 | `刷个视频` / `去刷会儿B站` | 真实抓取推荐流并汇报，可能顺带去评论区@你 |
 | `写日记` / `重写日记` | 日记系统（同步 QQ 空间） |
-| `服务器状态` | 红米服务器温度 / 内存 / 电量 |
+| `服务器状态` | 服务器温度 / 内存 / 电量 |
 | 直接发图片 | 本地视觉模型解析后傲娇锐评 |
 | 直接发链接 | 抓正文阅读，打不开自动换云端搜索 |
 | 什么都不发 | 她可能自己来搭话——被冷落久了会来蹭你 |
@@ -128,12 +128,12 @@ CiveBot/
 
 | 组件 | 版本/说明 |
 | --- | --- |
-| 硬件基座 | Redmi K60 Pro (12GB RAM + 512GB ROM)，免 Root |
-| 系统 | 精简版 MIUI14 |
-| 运行环境 | Termux + Node.js v24.22.3 |
+| 硬件基座 | 任意 Android 手机 (ARM64, 8GB RAM+)，免 Root |
+| 系统 | 原生/定制 ROM 均可 |
+| 运行环境 | Termux + Node.js v24+ |
 | 语音转码 | ffmpeg（NapCat 语音/音频消息依赖） |
-| 协议端 | NapCat (OneBot v11)，可部署于 AstrBot-Android 内置环境 |
-| 网络穿透 | Cloudflare Tunnel（免公网 IP 暴露） |
+| 协议端 | NapCat (OneBot v11)，可部署于 AstrBot-Android 等内置环境 |
+| 网络穿透 | Cloudflare Tunnel（免公网 IP 暴露，可选） |
 
 ## 🛠️ 快速启动
 
@@ -159,7 +159,7 @@ CiveBot/
    MIMO_API_KEY=你的MiMo密钥
    ```
 
-4. **配置 `public/ai-config.json`**（`providers` 数组第一位为主力，支持换位热切换）：
+4. **配置 `public/ai-config.json`**——任意 OpenAI 兼容接口均可接入，模板如下（`providers` 数组第一位为主力，换位即热切换主力）：
 
    ```json
    {
@@ -168,25 +168,35 @@ CiveBot/
      "stream": true,
      "providers": [
        {
-         "name": "SCNet GLM",
-         "apiUrl": "https://api.scnet.cn/api/llm/v1/chat/completions",
-         "model": "GLM-5.3-Flash-Event",
-         "apiKey": "sk-你的专属套餐Key"
+         "name": "主力服务商（随便起名）",
+         "apiUrl": "https://你的接口地址/v1/chat/completions",
+         "model": "该服务商的模型ID",
+         "apiKey": "sk-你的Key"
        },
        {
-         "name": "DeepSeek",
-         "apiUrl": "https://api.deepseek.com/chat/completions",
-         "model": "deepseek-flash",
-         "apiKey": "sk-你的DeepSeekKey"
+         "name": "备用服务商",
+         "apiUrl": "https://另一个接口地址/v1/chat/completions",
+         "model": "备用模型ID",
+         "apiKey": "sk-另一个Key"
        }
      ]
    }
    ```
 
-   > ⚠️ `apiUrl` 必须是**完整接口地址**（含 `/chat/completions`），不是文档里的基地址——server.js 是裸 POST，不会自动补路径。
-   > 💡 联网搜索功能自动路由到 apiUrl 含 `deepseek` 的 Provider，聊天主链路与其他功能各走各的账。
+   **常见厂商对照表**（`apiUrl` 与 `model` 直接抄）：
 
-5. **配置 B站 Cookie**（`bili-cookie.json`，用于登录小号冲浪与评论）。
+   | 厂商 | apiUrl | model 示例 |
+   | --- | --- | --- |
+   | DeepSeek | `https://api.deepseek.com/chat/completions` | `deepseek-flash` |
+   | 智谱开放平台 | `https://open.bigmodel.cn/api/paas/v4/chat/completions` | `glm-4-flash` 等 |
+   | 超算互联网 SCNet | `https://api.scnet.cn/api/llm/v1/chat/completions` | 见其 Token Plan 模型表 |
+   | 任意 OpenAI 中转 | `https://中转域名/v1/chat/completions` | 该中转支持的模型 |
+
+   > ⚠️ **`apiUrl` 必须是完整接口地址**（含 `/chat/completions`），不是文档里的基地址——server.js 是裸 POST，不会自动补路径。这是接入新厂商的第一大坑。
+   >
+   > 💡 **联网搜索功能**自动路由到 apiUrl 含 `deepseek` 的 Provider，聊天主链路与其他功能各走各的账；搜索属于增值能力，不配 DeepSeek 也不影响聊天。
+
+5. **配置 B站 Cookie**（`bili-cookie.json`，用于登录小号冲浪与评论，不配则该功能静默关闭）。
 
 6. **启动大脑与嘴巴**（开两个终端窗口）：
 
@@ -203,9 +213,9 @@ CiveBot/
 
 这是本项目的看家绝活，原理与效果：
 
-- **规则**：DeepSeek 的缓存按「请求前缀完整匹配」命中，命中的输入按约 **1/50 价格**计费。
-- **做法**：system 提示词（人设+法则）保持字节级纹丝不动；日记、情绪、时间戳、搜索结果、发言人身份等所有动态内容**全部下沉到每轮消息的尾部**；聊天历史分块滑移（160/200），攒批错位。
-- **实测**：命中率 3.4% → 87.6%，输入折算单价 $0.29/M → **$0.02/M**，一小时持续对话账单约 **一分钱**。
+- **规则**：大模型 API 的前缀缓存按「请求前缀完整匹配」命中，命中部分按极低价格（约 1/10～1/50）计费。
+- **做法**：system 提示词（人设+法则）保持字节级纹丝不动；日记、情绪、时间戳、搜索结果、发言人身份等所有动态内容**全部下沉到每轮消息的尾部**；聊天历史分块滑移，攒批错位。
+- **实测**（DeepSeek）：命中率 3.4% → **87.6%**，输入折算单价 $0.29/M → **$0.02/M**，一小时持续对话账单约 **一分钱**。
 - **红线**：给小c加任何新功能，动态内容只准上车尾，system 车头永远不动——守住这条，命中率就掉不回去。
 
 ## 🔧 常见问题排查
@@ -214,16 +224,17 @@ CiveBot/
 | --- | --- |
 | 她不回消息 | ① NapCat 服务是否运行（端口 6200）② qq-bot.js 进程是否活着 ③ WebUI「最近告警」看日志 |
 | 一句话回两条 | 有重复 qq-bot.js 进程：`pkill -f "qq-bot.js"` 后重开一个 |
+| 云端报错/没反应 | ① `apiUrl` 是否补全了 `/chat/completions` ② Key/余额/model ID 三连查 ③ 全挂会自动降级本地模型 |
 | 点歌/语音没反应 | 看终端日志链路：触发→搜索→发送，哪步断了修哪步；梯子开着时 GD音乐台会自动降级网易云 |
-| 云端报错/变笨 | `ai-config.json` 的 Key/余额/model ID 三连查；全挂会自动降级本地模型 |
 | 隧道连不上 | `cat /etc/resolv.conf` 查 DNS（曾踩坑：本地 DNS 残留 `::1` 导致全家断网） |
 | TTS 没声音 | `.env` 里 MIMO_API_KEY 是否配置；NapCat 转码依赖 ffmpeg 是否安装 |
+| 内存占用高 | QQ NT 桌面版天生多进程架构（十几个进程 500-700MB），属正常形态，重启 NapCat 服务可瘦身 |
 
 ## 🔒 安全与隐私
 
 - 所有 QQ 号、B站 Cookie、API Key 均通过 `.env` / `ai-config.json` / `bili-cookie.json` 与 `.gitignore` 物理隔离，绝不进公共仓库。
 - 本地视觉模型 (8081) 与文本模型 (8080) 的推理完全在手机本地完成，图片与长文本不上云。
-- 记忆数据库存放本地，并通过 CiveBot-Memory 私有仓库加密备份。
+- 记忆数据库存放本地，并通过私有仓库加密备份。
 - Cloudflare Tunnel 免公网 IP 暴露，外部访问走加密隧道。
 
 ## 📜 声明与致谢
@@ -232,7 +243,7 @@ CiveBot/
 - 感谢智谱 AI、DeepSeek、超算互联网 SCNet、小米 MiMo、MiniCPM 团队提供的模型与免费/低价算力支持。
 - 感谢 [GD音乐台](https://music.gdstudio.org/) 提供的免费聚合曲库 API，让小c的点歌与唱歌有了四源支撑。
 - 感谢 NapCat、AstrBot-Android 等开源项目构建的协议与运行环境。
-- 感谢 Linus Torvalds，没有 Linux，就没有这台承载灵魂的红米服务器。
+- 感谢 Linus Torvalds，没有 Linux，就没有这台承载灵魂的手机服务器。
 - 感谢屏幕前的你，见证了小c从一行行代码，长出属于她自己的声音。
 
 ## 📈 进化史
