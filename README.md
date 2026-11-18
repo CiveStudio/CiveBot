@@ -100,8 +100,6 @@ flowchart TB
 | 8081 | MiniCPM-V 4.6 | 本地视觉之眼 |
 | 3001/3002 | home/forum | 个人主页与论坛（可选扩展） |
 
-进程守护：`keep_alive.sh` 每 60 秒巡逻，任何服务掉线静默自动拉起。
-
 ## 📂 目录结构
 
 ```text
@@ -117,8 +115,6 @@ CiveBot/
 ├── qq-bot.js               # 嘴巴与声带 (QQ网关、标签拦截、TTS、点歌、歌词)
 ├── bili.js                 # B站专属模块 (WBI签名、四级降级解析、评论区)
 ├── push_diary.js           # 手动补发日记工具
-├── keep_alive.sh           # 守夜人：全服务掉线自动拉起
-├── REFACTOR.md             # 模块化重构清单 (待办)
 ├── CHANGELOG.md            # 小c编年史：每一次进化的完整记录
 ├── .env                    # 环境变量 (QQ号、MIMO_API_KEY 等敏感信息，已 gitignore)
 └── .gitignore              # 屏蔽所有密钥、数据库与 Cookie
@@ -188,7 +184,7 @@ CiveBot/
    | 厂商 | apiUrl | model 示例 |
    | --- | --- | --- |
    | DeepSeek | `https://api.deepseek.com/chat/completions` | `deepseek-flash` |
-   | 智谱开放平台 | `https://open.bigmodel.cn/api/paas/v4/chat/completions` | `glm-4-flash` 等 |
+   | 智谱开放平台 | `https://open.bigmodel.cn/api/paas/v4/chat/completions` | `glm-5.3-flash` 等 |
    | 超算互联网 SCNet | `https://api.scnet.cn/api/llm/v1/chat/completions` | 见其 Token Plan 模型表 |
    | 任意 OpenAI 中转 | `https://中转域名/v1/chat/completions` | 该中转支持的模型 |
 
@@ -204,8 +200,6 @@ CiveBot/
    node server.js    # 窗口 1：网页端与 API 网关
    node qq-bot.js    # 窗口 2：QQ 网关
    ```
-
-   可选：`nohup bash ~/keep_alive.sh > ~/keep_alive.log 2>&1 &` 启动守夜人，全服务掉线自动复活。
 
 7. **验证**：浏览器访问 `http://127.0.0.1:3000` 打开控制台；QQ 上说一句话，她回复即全链路打通。
 
@@ -248,7 +242,7 @@ CiveBot/
 
 ## 📈 进化史
 
-完整编年史见 [CHANGELOG.md](CHANGELOG.md)。里程碑：v260910 立项 → v261022 前后端分离 + SQLite 记忆 → v261101 端云双脑 → v261105 自主意识觉醒 → v261108 B站首声 → v261117 **声音降临与缓存奇迹** → v261118 点歌终形态。
+完整编年史见 [CHANGELOG.md](CHANGELOG.md)。里程碑：v260910 立项 → v261022 前后端分离 + SQLite 记忆 →v261027 接入QQ端 → v261101 端云双脑 → v261105 自主意识觉醒 → v261108 B站首声 → v261117 **声音降临与缓存奇迹** → v261118 点歌终形态。
 
 ---
 
