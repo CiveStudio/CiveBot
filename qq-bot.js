@@ -757,10 +757,28 @@ if (!isGroup || isAtMe) {
                             content: `歌手：${songInfo.artist}`,
                             image: songInfo.cover
                         } }]);
-                        // 卡片后追加完整音频文件（语音条60秒上限，完整版走文件）
+                        // 卡片后追加完整音频：下载到public让NapCat走本地HTTP取，绕过文件系统边界
                         if (playUrl) {
-                            console.log('🎵 追加完整音频文件...');
-                            sendMsg([{ type: 'file', data: { file: playUrl, name: `《${songInfo.name}》-${songInfo.artist}.mp3` } }]);
+                            console.log('🎵 下载完整音频到本地...');
+                            try {
+                                const audioRes = await fetch(playUrl, { signal: AbortSignal.timeout(60000) });
+                                if (!audioRes.ok) throw new Error(`HTTP ${audioRes.status}`);
+                                const buf = Buffer.from(await audioRes.arrayBuffer());
+                                if (buf.length < 100 * 1024) throw new Error(`文件过小(${Math.round(buf.length/1024)}KB)`);
+                                const cacheDir = path.join(__dirname, 'public', 'cache_music');
+                                fs.mkdirSync(cacheDir, { recursive: true });
+                                for (const f of fs.readdirSync(cacheDir)) {
+                                    const fp = path.join(cacheDir, f);
+                                    if (Date.now() - fs.statSync(fp).mtimeMs > 600000) { try { fs.unlinkSync(fp); } catch (e) {} }
+                                }
+                                const fileName = `${Date.now()}.mp3`;
+                                fs.writeFileSync(path.join(cacheDir, fileName), buf);
+                                console.log(`🎵 下载完成 ${Math.round(buf.length / 1048576 * 10) / 10}MB，经本地HTTP交给NapCat...`);
+                                sendMsg([{ type: 'file', data: { file: `http://127.0.0.1:3000/cache_music/${fileName}`, name: `《${songInfo.name}》-${songInfo.artist}.mp3` } }]);
+                            } catch (e) {
+                                console.log('🎵 本地下载失败，降级为远程直链:', e.message);
+                                sendMsg([{ type: 'file', data: { file: playUrl, name: `《${songInfo.name}》-${songInfo.artist}.mp3` } }]);
+                            }
                         }
                     } else {
                         console.log('🎵 没搜到，回复提示');

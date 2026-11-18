@@ -11,3 +11,7 @@ db/ciwei.db
 node_modules/
 bili-cookie.json
 .env
+
+# 音乐缓存
+/cache_music/
+/public/cache_music/
