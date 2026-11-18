@@ -21,14 +21,14 @@
 
 ```mermaid
 flowchart TB
-    QQ["QQ / QQ空间"] <--> NC["NapCat<br/>OneBot v11"]
+    QQ["QQ /<br/>QQ空间"] <--> NC["NapCat<br/>OneBot v11"]
     NC <--> BOT["qq-bot.js<br/>嘴巴与声带<br/>TTS / 点歌 / B站"]
-    BOT -->|"本地HTTP :3000"| SRV["server.js<br/>核心大脑<br/>记忆 / 情绪 / 日记"]
-    SRV <--> CLOUD["云端大模型<br/>多Provider可切换"]
-    SRV -.->|"云端全挂时降级"| LOCAL["本地兜底<br/>8080 文本<br/>8081 视觉"]
-    WEB["网页控制台 :3000"] --- SRV
-    CF["Cloudflare Tunnel"] --- WEB
-    DB[("SQLite 记忆库")] --- SRV
+    BOT -->|"本地<br/>HTTP :3000"| SRV["server.js<br/>核心大脑<br/>记忆 / 情绪<br/>日记"]
+    SRV <--> CLOUD["云端大模型<br/>多Provider<br/>可切换"]
+    SRV -.->|"云端全挂<br/>时降级"| LOCAL["本地兜底<br/>8080 文本<br/>8081 视觉"]
+    WEB["网页控制台<br/>:3000"] --- SRV
+    CF["Cloudflare<br/>Tunnel"] --- WEB
+    DB[("SQLite<br/>记忆库")] --- SRV
 ```
 
 **一次对话的完整旅程**：你在 QQ 发消息 → NapCat 转 OneBot 事件 → qq-bot.js 解析并做标签拦截 → server.js 挑选 Provider 调用大模型 → 回复写入 SQLite 记忆库 → 按 OneBot 段发回 QQ。中途模型可以下「标签指令」触发真实动作：搜索、点歌、语音、刷B站、写日记、查服务器——对话即操作。
