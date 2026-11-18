@@ -740,27 +740,28 @@ if (!isGroup || isAtMe) {
                     }));
 
                     const songInfo = await searchNeteaseMusic(songName);
-                    if (songInfo) {
+                                        if (songInfo) {
                         console.log('🎵 发送点歌结果...');
-                                                let playUrl = '';
+                        let playUrl = '';
                         try {
                             const uRes = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${songInfo.source}&id=${songInfo.urlId}&br=320`, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' } });
                             const uJson = await uRes.json();
                             playUrl = (uJson && uJson.url) || '';
                         } catch (e) {}
-                        // 保底文字，100%能到
-                        sendMsg([{ type: 'text', data: { text:
-                            `哼，勉强给你找到了《${songInfo.name}》 - ${songInfo.artist}\n爸爸快听：https://music.163.com/song?id=${songInfo.id}`
-                        } }]);
-                        // 正经音乐卡片，由 NapCat 自己生成，点开就能听
+                        // 只发卡片，不发文字
                         sendMsg([{ type: 'music', data: {
-    type: 'custom',
-    url: `https://music.163.com/song?id=${songInfo.id}`,
-            audio: playUrl || `https://music.163.com/song/media/outer/url?id=${songInfo.id}.mp3`,
-    title: songInfo.name,
-    content: `歌手：${songInfo.artist}`,
-    image: songInfo.cover
-} }]);
+                            type: 'custom',
+                            url: `https://music.163.com/song?id=${songInfo.id}`,
+                            audio: playUrl || `https://music.163.com/song/media/outer/url?id=${songInfo.id}.mp3`,
+                            title: songInfo.name,
+                            content: `歌手：${songInfo.artist}`,
+                            image: songInfo.cover
+                        } }]);
+                        // 卡片后追加完整音频文件（语音条60秒上限，完整版走文件）
+                        if (playUrl) {
+                            console.log('🎵 追加完整音频文件...');
+                            sendMsg([{ type: 'file', data: { file: playUrl, name: `《${songInfo.name}》-${songInfo.artist}.mp3` } }]);
+                        }
                     } else {
                         console.log('🎵 没搜到，回复提示');
                         sendMsg([{ type: 'text', data: { text:

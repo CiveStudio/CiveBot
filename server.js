@@ -281,6 +281,7 @@ const server = http.createServer((req, res) => {
                           `姓名: 小c \n` + 
                           `版本: ${versionStr}\n` +
                           `平台: Redmi K60 Pro(${os.arch()})\n` +
+                          `底座: NapCat v4.18.41 \n` +
                           `环境: Termux / Node.js ${process.version}\n` +
                           `模型: GLM-5.3-Flashx \n` +
                           `存储剩余: ${storage}B(512GB)\n` +
