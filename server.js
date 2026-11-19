@@ -408,7 +408,7 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                 });
                 apiReq.write(JSON.stringify(deepseekPayload));
                 apiReq.end();
-            } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: '服务器内部错误' })); }
+            } catch (err) { console.error('❌ 500详情:', err); res.writeHead(500); res.end(JSON.stringify({ error: '服务器内部错误', detail: String(err && err.message || err) })); }
         });
         return;
     }
