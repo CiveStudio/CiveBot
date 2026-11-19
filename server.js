@@ -49,6 +49,7 @@ function executeLocalFallback(payload, res) {
     let localPayload = JSON.parse(JSON.stringify(payload));
     // 🌟 缓存优化配套：本地小脑不认识 thinking 字段，转发前删掉
     delete localPayload.thinking;
+    delete localPayload.tools;
     
     if (localPayload.messages) {
         if (localPayload.messages[0] && localPayload.messages[0].role === 'system') {
@@ -361,7 +362,16 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
 
                 // 🌟 缓存优化③：deepseek-flash 默认开思考模式（按输出价计费，很贵）；只在 DeepSeek 时关掉
                 const deepseekPayload = { model: provider.model, messages: messages, stream: false };
-                if (provider.apiUrl && provider.apiUrl.includes('deepseek')) deepseekPayload.thinking = { type: 'disabled' };
+                                if (provider.webTools) {
+                    // 🆓 通用开关：该Provider支持服务端联网搜索时，声明webTools让其自行联网（仅收Token）
+                    deepseekPayload.thinking = { type: 'disabled' };
+                    deepseekPayload.tools = [
+                        { type: 'deepseek_web_search', name: 'deepseek_web_search' },
+                        { type: 'deepseek_read_url', name: 'deepseek_read_url' }
+                    ];
+                } else if (provider.apiUrl && provider.apiUrl.includes('deepseek')) {
+                    deepseekPayload.thinking = { type: 'disabled' };
+                }
 
                 const urlObj = new URL(provider.apiUrl);
                 const options = { hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + provider.apiKey } };

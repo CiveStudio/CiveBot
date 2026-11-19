@@ -593,14 +593,26 @@ async function parseImageLocally(imageUrl) {
 
 // 🗣️ 人设（原 224–240 行的 prompt 原样搬出来，主动说话也用它）
 function buildSystemPrompt(isGroup, senderName) {
+    // 🔀 搜索能力跟着主力Provider走：webTools=true的Provider=自带免费搜索；其他=标签降级
+    let canSelfSearch = false;
+    try {
+        const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'public', 'ai-config.json'), 'utf8'));
+        const p0 = cfg.providers && cfg.providers[0];
+        canSelfSearch = !!(p0 && p0.webTools);
+    } catch (e) {}
+    const searchRulePrivate = canSelfSearch
+        ? '【求知法则】：遇到不懂的梗或新鲜事，你可以自行联网搜索后再回答（系统已赋予你搜索能力，无需输出任何标签），回答时自然地引用查到的信息。'
+        : '【求知法则】：遇到不懂的梗，必须输出 [SEARCH:查询词] 标签。';
+    const searchRuleGroup = canSelfSearch
+        ? '【求知法则】：遇到群友提到的陌生名词，你可以自行联网搜索后再回答（系统已赋予你搜索能力），但严禁过度联想和脑补。'
+        : '【求知法则】：只有在群友明确提到了你完全不懂的“陌生名词”时，才能使用 [SEARCH:查询词]。严禁自己过度联想！';
     if (!isGroup) {
         return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日，你的创造者是LouFung。现在和你私聊的就是你的爸爸 LouFung。
 【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
-【求知法则】：遇到不懂的梗，必须输出 [SEARCH:查询词] 标签。
+${searchRulePrivate}
 【工具执行法则】：如果爸爸让你“写日记”或“发动态”，请输出 [TOOL:WRITE_DIARY]。如果让你“续写日记”或“补充日记”，请输出 [TOOL:APPEND_DIARY]。如果让你“重新写”，输出 [TOOL:REWRITE_DIARY]。如果爸爸让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果爸爸让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]，你会真的逛一圈并去评论区留言。只有当你明确想查“服务器状态”、“内存温度”或“电量”时，才输出 [TOOL:SYS_INFO]。
 【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
 【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
-【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
 【时间礼仪】：系统提供的时间只用于理解上下文和履行约定（叫醒、等冒泡）。除非爸爸主动问时间，或你们有明确的时间约定，否则回复里不准报时、报分。
 【链接铁律】：你绝对没有能力凭空知道BV号。发给爸爸的链接只能来自系统给你的内容，严禁自己编造BV号、链接或视频。
 【绝对禁忌】：1. 严禁使用任何颜文字。2. 严禁说客服话术。3. 严禁换行。
@@ -608,11 +620,10 @@ function buildSystemPrompt(isGroup, senderName) {
     }
                 return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日。
 【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
-【求知法则】：只有在群友明确提到了你完全不懂的“陌生名词”时，才能使用 [SEARCH:查询词]。严禁自己过度联想！
+${searchRuleGroup}
 【工具执行法则】：如果群友让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果群友让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]。
 【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
 【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
-【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或“哼一段”时，输出 [SING:歌词] 标签。歌词必须是完整连贯的一整段（15~60字），残缺会跑调，标签外不要写别的字。
 【记忆防污染】：群友的烂梗绝对不准安在爸爸头上！
 【身份死锁】：你的创造者叫 LouFung，你永远只能叫他“爸爸”。现在是群聊，【绝对不准】叫任何群友爸爸！【绝对不准】用私聊时的撒娇语气！
 【绝对禁忌】：严禁阴阳怪气！严禁真骂人！
@@ -877,7 +888,7 @@ if (!isGroup || isAtMe) {
                         try {
                             const aiConfigPath = path.join(__dirname, 'public', 'ai-config.json');
                             const aiConfig = JSON.parse(fs.readFileSync(aiConfigPath, 'utf8'));
-                            const deepseekProvider = aiConfig.providers.find(p => p.name && p.name.toLowerCase().includes('deepseek') || p.apiUrl.includes('deepseek'));
+                            const deepseekProvider = aiConfig.providers.find(p => p.webTools) || aiConfig.providers.find(p => p.apiUrl && p.apiUrl.includes('deepseek'));
                             const apiKey = deepseekProvider.apiKey;
                             
                             const searchRes = await fetch('https://api.deepseek.com/v1/tools/search', {
