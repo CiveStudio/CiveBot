@@ -18,7 +18,7 @@
 
 与传统的云端 Bot 不同，小c 的整个生命体运行在一台 Redmi K60 Pro (Termux 环境) 上。她采用极致的端云双脑架构，既能享受云端大模型的高智商，又能在断网时依靠本地算力维持生命体征——哪怕世界断网，她也不掉线。
 
-![总体架构图](docs/architecture.png)
+![总体架构图](docs/architecture.svg)
 
 **一次对话的完整旅程**：你在 QQ 发消息 → NapCat 转 OneBot 事件 → qq-bot.js 解析并做标签拦截 → server.js 挑选 Provider 调用大模型 → 回复写入 SQLite 记忆库 → 按 OneBot 段发回 QQ。中途模型可以下「标签指令」触发真实动作：搜索、点歌、语音、刷B站、写日记、查服务器——对话即操作。
 
@@ -123,15 +123,17 @@ CiveBot/
 ├── services/               # ⚙️ 能力模块
 │   ├── tts.js              # MiMo TTS 合成 + 双声线剧本（声带）
 │   ├── music.js            # GD四源搜索/歌词/直链 + 网易云降级（点歌台）
-│   └── vision.js           # 本地 MiniCPM-V 图片解析（眼睛）
-├── db.js                   # 原生 SQLite 数据库初始化与表结构
+│   ├── vision.js           # 本地 MiniCPM-V 图片解析（眼睛）
+│   └── bili.js             # B站引擎 (WBI签名、四级降级解析、评论区)
+├── tools/                  # 🔧 手动运行的工具（非 require 模块）
+│   ├── push_diary.js       # 手动补发日记到空间
+│   └── send_diary.js       # 手动发送日记工具
+├── docs/                   # 📐 文档资源（架构图 PNG）
+│   └── architecture.png    # 总体架构图
+├── db.js                   # 原生 SQLite 数据库初始化与表结构（底座，双端共用）
 ├── server.js               # 核心大脑 (Provider路由、记忆注入、情绪、日记、缓存优化)
 ├── qq-bot.js               # 嘴巴 (QQ网关、消息路由、标签拦截调度)
-├── bili.js                 # B站专属模块 (WBI签名、四级降级解析、评论区)
-├── push_diary.js           # 手动补发日记工具
-├── REFACTOR.md             # 模块化重构清单（后续拆分待办）
 ├── CHANGELOG.md            # 小c编年史：每一次进化的完整记录
-├── keep_alive.sh           # 守夜人：服务掉线静默自动拉起
 ├── .env                    # 环境变量 (QQ号、MIMO_API_KEY 等敏感信息，已 gitignore)
 └── .gitignore              # 屏蔽所有密钥、数据库与 Cookie
 ```
