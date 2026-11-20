@@ -1,5 +1,12 @@
 # 🦔 CiveBot (小c) 编年史与更新日志
 
+## [v261121] - 2026-11-21
+### 🗂️ 目录整理与架构图定稿
+- **bili.js 入驻 services/**：B站引擎归位能力模块区，qq-bot.js 引用路径同步更新。
+- **新建 tools/ 手动工具区**：push_diary.js、send_diary.js 迁入，require 路径改 `../db`——services/ 只留被 require 的能力模块，手动 CLI 另立门户，语义不再混装。
+- **架构图定稿 PNG**：Mermaid 移动端截断顽疾终结——方案三迭（mermaid.ink 三连翻车：Termux 无 /tmp、粘贴断行、base64 字符集非 URL-safe），最终「本地现算 URL-safe base64 + 预渲染 PNG」定版；新图含 services 模块群 / prompts / tools 全节点。
+- **戳一戳署名修复**：notice 事件无 sender 字段导致私聊戳一戳显示「群友」——私聊 user_id === MY_QQ 时认定 LouFung，记忆库不再错记陌生群友。
+
 ## [v261120] - 2026-11-20
 ### 🧩 模块化重构：千行大文件解体，五模块各就其位
 - **重构落地**：按 REFACTOR.md 清单完成第一步——qq-bot.js（60KB → 46KB）拆出五模块：`prompts/persona.js`（双模板人格 + 搜索能力跟随主力 Provider 自动切换）、`prompts/laws.js`（B站判定法则）、`services/tts.js`（MiMo 声带 + 说话/唱歌双声线剧本）、`services/music.js`（GD 四源搜索 / 真实歌词 / 播放直链）、`services/vision.js`（本地视觉解析）。消息路由与标签拦截留驻主文件——按风险最低的路径先行。
