@@ -1,4 +1,4 @@
-const db = require('./db');
+ const db = require('../db');
 const now = new Date();
 const today = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const r = db.prepare('SELECT content FROM journals WHERE date=?').get(today);

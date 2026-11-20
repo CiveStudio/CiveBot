@@ -1,4 +1,4 @@
-const db = require('./db');
+ const db = require('../db');
 
 // 直接获取数据库里最新的一条日记（不管日期，防止时区算错）
 const latestDiary = db.prepare('SELECT date, content FROM journals ORDER BY id DESC LIMIT 1').get();
