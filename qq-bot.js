@@ -489,7 +489,9 @@ function connect() {
                     chatId = isGroup ? `group_${data.group_id}` : `private_${data.user_id}`;
                     isAtMe = true; text = '(有人戳了戳你)';
                     senderQQ = data.user_id;
-                    senderName = data.sender?.card || data.sender?.nickname || '群友';
+                                        senderName = isGroup
+                        ? (data.sender?.card || data.sender?.nickname || '群友')
+                        : (String(data.user_id) === String(MY_QQ) ? 'LouFung' : '群友');
                 }
             }
 

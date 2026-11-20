@@ -262,7 +262,15 @@ const server = http.createServer((req, res) => {
         const year = mtime.getFullYear();
         const month = String(mtime.getMonth() + 1).padStart(2, '0');
         const day = String(mtime.getDate()).padStart(2, '0');
-        versionStr = `v${year}${month}${day}`;
+                versionStr = `v${year}${month}${day}`;
+    } catch (e) {}
+
+    // 📡 模型信息：自动读取 ai-config.json 的主力 Provider（改配置即生效，无需重启）
+    let modelStr = '未配置';
+    try {
+        const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        const p0 = cfg.providers && cfg.providers[0];
+        if (p0) modelStr = `${p0.model}（${p0.name || '主力'}）`;
     } catch (e) {}
 
     // 3. 精准提取存储和可用内存 (无温度)
@@ -284,7 +292,7 @@ const server = http.createServer((req, res) => {
                           `平台: Redmi K60 Pro(${os.arch()})\n` +
                           `底座: NapCat v4.18.41 \n` +
                           `环境: Termux / Node.js ${process.version}\n` +
-                          `模型: GLM-5.3-Flash-Event \n` +
+                          `模型: ${modelStr}\n` +
                           `存储剩余: ${storage}B(512GB)\n` +
                           `可用内存: ${memory} GB (12GB)\n` +
                           `运行时长: ${days}天 ${hours}小时 ${minutes}分钟`;
