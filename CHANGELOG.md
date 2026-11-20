@@ -1,7 +1,13 @@
 # 🦔 CiveBot (小c) 编年史与更新日志
 
+## [v261120] - 2026-11-20
+### 🧩 模块化重构：千行大文件解体，五模块各就其位
+- **重构落地**：按 REFACTOR.md 清单完成第一步——qq-bot.js（60KB → 46KB）拆出五模块：`prompts/persona.js`（双模板人格 + 搜索能力跟随主力 Provider 自动切换）、`prompts/laws.js`（B站判定法则）、`services/tts.js`（MiMo 声带 + 说话/唱歌双声线剧本）、`services/music.js`（GD 四源搜索 / 真实歌词 / 播放直链）、`services/vision.js`（本地视觉解析）。消息路由与标签拦截留驻主文件——按风险最低的路径先行。
+- **gdGetPlayUrl 抽取**：点歌块里内联的播放直链请求抽成独立函数，点歌块从 20 行瘦身到 1 行调用。
+- **README v4 重写**：总架构图换装 Mermaid 渲染；新增「模块化结构」「本地模型来源」两节——MiniCPM-V 4.6 与 MiniCPM5-2B 的官方仓库与 HuggingFace 权重全链挂载（含 V4.6-Thinking 思考版）；部署环境补 AstrBot-Android 运行说明（PRoot Ubuntu + Linux QQ 免 Root 方案，1.3.0 内置 NapCat 配合良好），并附上游 NapCat / SnowLuma 删库提示与 fork 指引。
+
 ## [v261119] - 2026-11-19
-### 🔌 万能接口与升级
+### 🔌 增加万能接口与排查故障显示
 - **万能搜索接口**：Provider 新增 `webTools` 配置开关——设 `true` 的 Provider 启用服务端联网搜索（DeepSeek 2026-11-18 起服务端搜索/抓取免费，仅收 Token）；主力是它 → 模型自带搜索自动接管；主力不是它 → 自动回退 `[SEARCH]` 标签降级。
 - **排障透视镜**：server.js 的 500 响应增加 `detail` 字段与终端堆栈打印，配置类错误从此一目了然，告别静默 500。
 

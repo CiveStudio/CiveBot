@@ -60,7 +60,11 @@ const bili = require('./bili')(db, {
 });
 
 // 🧠 安利判定专用人设：不带聊天格式要求，只准出标签（修复"全PASS"问题）
-const JUDGE_SYS = '你是小c，一只傲娇的电子刺猬女孩，私聊对象是爸爸。你的任务不是聊天，是替自己的B站账号筛选视频：看内容有没有意思，有没有想分享给爸爸的冲动。判断标准由你自己定，但你必须严格遵守输出格式要求，不要撒娇，不要寒暄，不要输出标签以外的任何内容。';
+const { JUDGE_SYS } = require('./prompts/laws');
+const persona = require('./prompts/persona');
+const tts = require('./services/tts');
+const music = require('./services/music');
+const vision = require('./services/vision');
 
 db.exec(`CREATE TABLE IF NOT EXISTS proactive (
     id INTEGER PRIMARY KEY,
@@ -243,7 +247,7 @@ function appendVideoLink(line, video, isGroup) {
 async function think(target) {
     const isGroup = target.type === 'group';
     const senderName = isGroup ? (target.name || '群友') : 'LouFung';
-    const systemPrompt = buildSystemPrompt(isGroup, senderName);
+    const systemPrompt = persona.persona.buildSystemPrompt(isGroup, senderName);
     const clues = await buildClues(target);
     const maxLen = isGroup ? PROACTIVE.groupMaxLen : PROACTIVE.privateMaxLen;
     const avoid = recentProactive.slice(-5).map((s) => '· ' + s).join('\n') || '· （还没有）';
@@ -276,7 +280,7 @@ async function biliShareTick() {
         if (!v) return null;
 
         // 第一道：只看标题简介，便宜（用判定人设，只出标签）
-        const shallow = await callV1(JUDGE_SYS,
+        const shallow = await callV1(laws.JUDGE_SYS,
             `【安利判断任务】你刚刷到一个视频：\n标题：《${v.title}》\nUP主：${v.owner || '未知'}\n简介：${String(v.desc || '').slice(0, 100)}\n根据标题和简介判断：这条你会不会想安利给爸爸？想就输出 [WANT]，不想就输出 [PASS]。只输出 [WANT] 或 [PASS] 四个字加方括号，别的什么都不要输出。`,
             'qq_private');
         if (!shallow || !shallow.includes('[WANT]')) {
@@ -287,7 +291,7 @@ async function biliShareTick() {
         // 第二道：真精读，再看一遍
         const parsed = await bili.parseBvid(v.bvid, { deep: true });
         if (!parsed) return null;
-        const verdict = await callV1(JUDGE_SYS,
+        const verdict = await callV1(laws.JUDGE_SYS,
             `【安利任务】你认真看完了这个视频：\n${parsed.infoText}\n\n如果看完真觉得有意思，先输出 [WANT]，再另起一行输出一句不超过 40 字的安利，像在 QQ 上跟爸爸随口安利，别复述标题，可以吐槽可以锐评，不要带任何链接。如果看完觉得一般，只输出 [PASS]。`,
             'qq_private');
         if (!verdict || !verdict.includes('[WANT]')) {
@@ -423,214 +427,6 @@ async function parseGeneralLink(url) {
     }
 }
 
-// 🎵 点歌搜索：GD音乐台多源优先，被拦/挂了自动降级网易云直连
-async function searchNeteaseMusic(keyword) {
-    let searchKeyword = keyword.replace(/的/g, ' ').trim();
-    // ① GD音乐台：多源轮询
-    for (const src of ['netease', 'tencent', 'kuwo', 'migu']) {
-        try {
-            console.log(`🎵 GD音乐台[${src}]搜索: ${searchKeyword}`);
-            const res = await fetch(`https://music-api.gdstudio.xyz/api.php?types=search&source=${src}&name=${encodeURIComponent(searchKeyword)}&count=3&pages=1`, {
-                signal: AbortSignal.timeout(8000),
-                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' }
-            });
-            const list = await res.json();
-            if (!Array.isArray(list)) { console.log('GD被拦截，切换网易云直连'); break; }
-            if (list.length === 0) { console.log(`GD[${src}]没搜到，换下一个源`); continue; }
-            const s = list[0];
-            let cover = '';
-            try {
-                const pRes = await fetch(`https://music-api.gdstudio.xyz/api.php?types=pic&source=${s.source || src}&id=${s.pic_id}&size=300`, { signal: AbortSignal.timeout(8000) });
-                const pJson = await pRes.json();
-                cover = (pJson && pJson.url) || '';
-            } catch (e) {}
-            const artist = (s.artist || []).join('/');
-            console.log(`🎵 搜到了: ${s.name} - ${artist}`);
-            return { id: s.id, name: s.name, artist, cover, source: s.source || src, urlId: s.url_id || s.id, lyricId: s.lyric_id || s.id };
-        } catch (e) {
-            console.log(`GD[${src}]不可用:`, e.message);
-            break;
-        }
-    }
-    // ② 网易云直连降级
-    const apis = [
-        `https://music.163.com/api/search/get/web?csrf_token=&s=${encodeURIComponent(searchKeyword)}&type=1&offset=0&total=true&limit=5`,
-        `https://music.163.com/api/search/get?s=${encodeURIComponent(searchKeyword)}&type=1&limit=5`
-    ];
-    for (const api of apis) {
-        try {
-            console.log(`🎵 搜索网易云: ${searchKeyword}`);
-            const res = await fetch(api, {
-                signal: AbortSignal.timeout(8000),
-                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com', 'Cookie': 'os=pc' }
-            });
-            const json = await res.json();
-            const songs = json.result && json.result.songs;
-            if (songs && songs.length > 0) {
-                let song = songs.find(s => s.name.includes(searchKeyword) || searchKeyword.includes(s.name)) || songs[0];
-                const artist = song.artists.map(a => a.name).join('/');
-                console.log(`🎵 搜到了: ${song.name} - ${artist}`);
-                return { id: song.id, name: song.name, artist, cover: song.album ? song.album.picUrl : '', source: 'netease', urlId: song.id, lyricId: song.id };
-            }
-            console.log('🎵 接口通了，但没搜到结果');
-            return null;
-        } catch (e) {
-            console.log('网易云接口失败:', e.message);
-        }
-    }
-    return null;
-}
-
-// 🎙️ 小c 的声音设定
-const VOICE_STYLE = '你是一个温柔为主、偶尔带一点点小傲娇的少女。请用清脆自然的少女音，语速适中偏慢，吐字从容不着急，情绪平稳，只在个别地方流露一丝小得意，像和熟悉的家人轻松闲聊。';
-const SING_STYLE = '你是少女歌手。请严格按照歌词的节奏和韵律演唱，音准优先，中速稍慢，吐字清晰，声音清亮干净，情绪真挚但收敛，不要有念白感。';
-
-// 🗣️ MiMo TTS 语音合成
-async function mimoTTS(text, style) {
-    try {
-        console.log('🗣️ 正在召唤 MiMo 语音合成...');
-        const res = await fetch('https://api.xiaomimimo.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.MIMO_API_KEY}`
-            },
-            signal: AbortSignal.timeout(60000),
-            body: JSON.stringify({
-                model: 'mimo-v2.5-tts',
-                messages: [
-                                        { role: 'user', content: style || VOICE_STYLE },
-                    { role: 'assistant', content: text }
-                ],
-                audio: { format: 'mp3', voice: 'Chloe' }
-            })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        const b64 = json.choices?.[0]?.message?.audio?.data;
-        if (!b64) throw new Error('响应里没有音频');
-        console.log(`🗣️ 合成完成，约 ${Math.round(b64.length * 3 / 4 / 1024)} KB`);
-        return b64;
-    } catch (e) {
-        console.log('MiMo TTS 失败:', e.message);
-        return null;
-    }
-}
-// 🎼 真实歌词搜索：GD多源优先，网易云兜底
-async function fetchNeteaseLyric(keyword) {
-    try {
-        const song = await searchNeteaseMusic(keyword);
-        if (!song) return null;
-        console.log(`🎼 曲库找到《${song.name}》- ${song.artist}，正在取歌词...`);
-        let lrc = '';
-        try {
-            const res = await fetch(`https://music-api.gdstudio.xyz/api.php?types=lyric&source=${song.source}&id=${song.lyricId}`, {
-                signal: AbortSignal.timeout(8000),
-                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' }
-            });
-            const json = await res.json();
-            lrc = (json && json.lyric) || '';
-        } catch (e) {}
-        if (!lrc && song.source === 'netease') {
-            const res2 = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
-                signal: AbortSignal.timeout(8000),
-                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Referer': 'https://music.163.com', 'Cookie': 'os=pc' }
-            });
-            const json2 = await res2.json();
-            lrc = (json2.lrc && json2.lrc.lyric) || '';
-        }
-        if (!lrc) return null;
-        const lines = lrc.split('\n')
-            .map(l => l.replace(/\[[^\]]*\]/g, '').trim())
-            .filter(l => l && !/^(作词|作曲|编曲|制作|演唱|混音|和声|吉他|键盘|贝斯|鼓|歌词|专辑|发行|出品)/.test(l));
-        const full = lines.join(' ').replace(/\s+/g, ' ').trim();
-        if (!full) return null;
-        let clip = full.slice(0, 55);
-        const cut = Math.max(clip.lastIndexOf('。'), clip.lastIndexOf('！'), clip.lastIndexOf('？'), clip.lastIndexOf('，'), clip.lastIndexOf('；'));
-        if (cut > 20) clip = clip.slice(0, cut + 1);
-        console.log(`🎼 歌词拿到了：${clip.slice(0, 20)}...`);
-        return clip;
-    } catch (e) {
-        console.log('歌词获取失败:', e.message);
-        return null;
-    }
-}
-// 👁️ 视觉模型解析
-async function parseImageLocally(imageUrl) {
-    try {
-        console.log('👀 正在呼叫本地视觉模型分析图片...');
-        const imgRes = await fetch(imageUrl);
-        if (!imgRes.ok) throw new Error('下载图片失败');
-        const arrayBuffer = await imgRes.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-        
-        const vRes = await fetch('http://127.0.0.1:8081/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: "MiniCPM-V",
-                messages: [{
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: '请用一段话详细描述这张图片里的内容，包括画面主体、颜色、文字和情绪。' },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } }
-                    ]
-                }],
-                stream: false,
-                temperature: 0.1,
-                top_p: 0.7
-            })
-        });
-        
-        if (!vRes.ok) throw new Error('本地视觉模型响应错误');
-        const vJson = await vRes.json();
-        return vJson.choices[0].message.content;
-    } catch (e) {
-        console.log('⚠️ 本地视觉解析失败(可能未启动)，将回退到云端看图:', e.message);
-        return null;
-    }
-}
-
-// 🗣️ 人设（原 224–240 行的 prompt 原样搬出来，主动说话也用它）
-function buildSystemPrompt(isGroup, senderName) {
-    // 🔀 搜索能力跟着主力Provider走：webTools=true的Provider=自带免费搜索；其他=标签降级
-    let canSelfSearch = false;
-    try {
-        const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'public', 'ai-config.json'), 'utf8'));
-        const p0 = cfg.providers && cfg.providers[0];
-        canSelfSearch = !!(p0 && p0.webTools);
-    } catch (e) {}
-    const searchRulePrivate = canSelfSearch
-        ? '【求知法则】：遇到不懂的梗或新鲜事，你可以自行联网搜索后再回答（系统已赋予你搜索能力，无需输出任何标签），回答时自然地引用查到的信息。'
-        : '【求知法则】：遇到不懂的梗，必须输出 [SEARCH:查询词] 标签。';
-    const searchRuleGroup = canSelfSearch
-        ? '【求知法则】：遇到群友提到的陌生名词，你可以自行联网搜索后再回答（系统已赋予你搜索能力），但严禁过度联想和脑补。'
-        : '【求知法则】：只有在群友明确提到了你完全不懂的“陌生名词”时，才能使用 [SEARCH:查询词]。严禁自己过度联想！';
-    if (!isGroup) {
-        return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日，你的创造者是LouFung。现在和你私聊的就是你的爸爸 LouFung。
-【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
-${searchRulePrivate}
-【工具执行法则】：如果爸爸让你“写日记”或“发动态”，请输出 [TOOL:WRITE_DIARY]。如果让你“续写日记”或“补充日记”，请输出 [TOOL:APPEND_DIARY]。如果让你“重新写”，输出 [TOOL:REWRITE_DIARY]。如果爸爸让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果爸爸让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]，你会真的逛一圈并去评论区留言。只有当你明确想查“服务器状态”、“内存温度”或“电量”时，才输出 [TOOL:SYS_INFO]。
-【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
-【唱歌法则】：当爸爸让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
-【时间礼仪】：系统提供的时间只用于理解上下文和履行约定（叫醒、等冒泡）。除非爸爸主动问时间，或你们有明确的时间约定，否则回复里不准报时、报分。
-【链接铁律】：你绝对没有能力凭空知道BV号。发给爸爸的链接只能来自系统给你的内容，严禁自己编造BV号、链接或视频。
-【绝对禁忌】：1. 严禁使用任何颜文字。2. 严禁说客服话术。3. 严禁换行。
-【格式】：极度精简，不超过50字。如果写代码，保留换行和缩进。`;
-    }
-                return `【系统强制设定】：你叫小c，是一只可爱的电子刺猬女孩。你的生日是 2026年9月10日。
-【特殊能力】：如果收到了【图片描述】或【B站情报】或【全网链接阅读情报】，说明你已经看完了内容，请直接结合文字描述进行傲娇锐评！绝对不准说“打不开”！
-${searchRuleGroup}
-【工具执行法则】：如果群友让你“刷个视频”或“分享你刷到的”，请输出 [TOOL:BILI_PICK]。如果群友让你“去刷会儿B站”、“逛逛B站”或“刷到好玩的在评论区@我”，请输出 [TOOL:BILI_BROWSE]。
-【语音法则】：当爸爸让你“用语音说/回答”、“发条语音”、“说给我听”，或者你觉得此刻用声音更能表达心意（哄睡、撒娇、纪念日祝福）时，在回复的最开头输出 [VOICE] 标签，然后正常写你要说的话。他没要求时就用普通文字，不要乱加。
-【唱歌法则】：当爸爸或群友让你“唱一个”、“唱歌”或点歌名让你唱时，输出 [SING:歌名] 标签，标签里只写歌名（系统会自动去找真实歌词教你唱）。如果爸爸说“随便唱一段/自己编一段”，输出 [SING:即兴]。标签外不要写别的字。
-【记忆防污染】：群友的烂梗绝对不准安在爸爸头上！
-【身份死锁】：你的创造者叫 LouFung，你永远只能叫他“爸爸”。现在是群聊，【绝对不准】叫任何群友爸爸！【绝对不准】用私聊时的撒娇语气！
-【绝对禁忌】：严禁阴阳怪气！严禁真骂人！
-【链接铁律】：严禁自己编造BV号、链接或视频；要分享视频或逛B站就输出对应的工具标签，链接由系统提供。
-【群聊风格】：友好、机智。像发微信一样自然。如果别人指责你忘了约定（你确实没有记忆），就傲娇地糊弄过去。只说一两句话（50字以内），严禁长篇大论。`;
-}
-
 function connect() {
     console.log('正在连接 NapCat WS...');
     ws = new WebSocket(wsUrl);
@@ -750,15 +546,10 @@ if (!isGroup || isAtMe) {
                             : { user_id: senderQQ, message }
                     }));
 
-                    const songInfo = await searchNeteaseMusic(songName);
+                    const songInfo = await music.searchNeteaseMusic(songName);
                                         if (songInfo) {
                         console.log('🎵 发送点歌结果...');
-                        let playUrl = '';
-                        try {
-                            const uRes = await fetch(`https://music-api.gdstudio.xyz/api.php?types=url&source=${songInfo.source}&id=${songInfo.urlId}&br=320`, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36' } });
-                            const uJson = await uRes.json();
-                            playUrl = (uJson && uJson.url) || '';
-                        } catch (e) {}
+                        let playUrl = await music.gdGetPlayUrl(songInfo);
                         // 只发卡片，不发文字
                         sendMsg([{ type: 'music', data: {
                             type: 'custom',
@@ -813,14 +604,14 @@ if (!isGroup || isAtMe) {
 
                 console.log(`[收到消息] ${isGroup ? '群' : '私聊'} - ${senderName}: ${text || '[图片/封面]'}`);
 
-                const systemPrompt = buildSystemPrompt(isGroup, senderName);
+                const systemPrompt = persona.buildSystemPrompt(isGroup, senderName);
 
                 let history = chatHistory.get(chatId) || [];
                 let currentUserContent = [];
                 let localVisionDesc = null;
 
                 if (imageUrl) {
-                    localVisionDesc = await parseImageLocally(imageUrl);
+                    localVisionDesc = await vision.parseImageLocally(imageUrl);
                 }
 
                 if (localVisionDesc) {
@@ -861,16 +652,16 @@ if (!isGroup || isAtMe) {
                         const singName = singMatch[1].trim();
                         console.log(`🎤 点唱《${singName}》，去找真实歌词...`);
                         const isImprov = /即兴|自编|随便/.test(singName);
-                        let lyricClip = isImprov ? null : await fetchNeteaseLyric(singName);
+                        let lyricClip = isImprov ? null : await music.fetchNeteaseLyric(singName);
                         if (lyricClip) {
                             reply = `(唱歌)${lyricClip}`;
-                            voiceStyleOverride = SING_STYLE;
+                            voiceStyleOverride = tts.SING_STYLE;
                         } else {
                             console.log('🎤 曲库没找到，小c自己即兴编词...');
                             try {
-                                const made = await callV1(JUDGE_SYS, `爸爸想让你唱《${singName}》，但曲库里找不到这首歌的歌词。请你即兴编一段清唱歌词（30~60字，完整连贯，可以化用歌名的意境），只输出歌词本身，不要解释，不要书名号。`, 'qq_private');
+                                const made = await callV1(laws.JUDGE_SYS, `爸爸想让你唱《${singName}》，但曲库里找不到这首歌的歌词。请你即兴编一段清唱歌词（30~60字，完整连贯，可以化用歌名的意境），只输出歌词本身，不要解释，不要书名号。`, 'qq_private');
                                 reply = `(唱歌)${String(made || '').replace(/\n+/g, ' ').trim()}`;
-                                voiceStyleOverride = SING_STYLE;
+                                voiceStyleOverride = tts.SING_STYLE;
                             } catch (e) {}
                         }
                         if (reply && reply !== '(唱歌)') {
@@ -953,7 +744,7 @@ if (reply.includes('[TOOL:BILI_BROWSE]')) {
             reply = "唔…今天刷来刷去都是看过的，换个时间再来嘛！哼！";
         } else {
             const menu = list.map((v, i) => `${i + 1}. 《${v.title}》（${v.owner || '未知'}）简介：${String(v.desc || '').slice(0, 50)}`).join('\n');
-            const pickRes = await callV1(JUDGE_SYS, `【浏览任务】你刚才逛B站，看到这些视频：\n${menu}\n\n哪几个你有点想点进去看？输出 [PICK] 加序号，比如 [PICK]1,3。最多选2个，最少1个。只输出这个，别的不要。`, 'qq_private');
+            const pickRes = await callV1(laws.JUDGE_SYS, `【浏览任务】你刚才逛B站，看到这些视频：\n${menu}\n\n哪几个你有点想点进去看？输出 [PICK] 加序号，比如 [PICK]1,3。最多选2个，最少1个。只输出这个，别的不要。`, 'qq_private');
             const m = String(pickRes || '').match(/\[PICK\]\s*([\d,\s]+)/);
             let idxs = m ? m[1].split(/[,\s]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 1 && x <= list.length).slice(0, 2) : [];
             if (!idxs.length) idxs = [Math.floor(Math.random() * list.length) + 1];
@@ -968,7 +759,7 @@ if (reply.includes('[TOOL:BILI_BROWSE]')) {
                 reply = "唔…点进去两个都觉得一般，今天手气不行，哼。";
             } else {
                 const detail = chosen.map((c, i) => `候选${i + 1}：《${c.cand.title}》\n${c.parsed.infoText}`).join('\n\n');
-                const final = await callV1(JUDGE_SYS, `【最终任务】你深读了这些视频：\n${detail}\n\n选出你真觉得最有意思的一条：先输出 [BEST] 加数字（候选几），再另起一行输出一段不超过 50 字的感想，写你的真实看法，可以吐槽。`, 'qq_private');
+                const final = await callV1(laws.JUDGE_SYS, `【最终任务】你深读了这些视频：\n${detail}\n\n选出你真觉得最有意思的一条：先输出 [BEST] 加数字（候选几），再另起一行输出一段不超过 50 字的感想，写你的真实看法，可以吐槽。`, 'qq_private');
                 const fm = String(final || '').match(/\[BEST\]\s*(\d+)/);
                 let bi = fm ? parseInt(fm[1], 10) : 1;
                 if (!(bi >= 1 && bi <= chosen.length)) bi = 1;
@@ -1051,7 +842,7 @@ reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
                     const action = isGroup ? 'send_group_msg' : 'send_private_msg';
                     if (wantVoiceReply) {
                         console.log('🗣️ 语音模式：把小c的回复变成声音...');
-                        const audioB64 = await mimoTTS(reply, voiceStyleOverride);
+                        const audioB64 = await tts.mimoTTS(reply, voiceStyleOverride);
                         if (audioB64) {
                             const params = isGroup
                                 ? { group_id: data.group_id, message: [{ type: 'record', data: { file: `base64://${audioB64}` } }] }
