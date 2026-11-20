@@ -18,19 +18,7 @@
 
 与传统的云端 Bot 不同，小c 的整个生命体运行在一台 Redmi K60 Pro (Termux 环境) 上。她采用极致的端云双脑架构，既能享受云端大模型的高智商，又能在断网时依靠本地算力维持生命体征——哪怕世界断网，她也不掉线。
 
-## 🏗️ 总体架构
-
-```mermaid
-flowchart TB
-    QQ["QQ /<br/>QQ空间"] <--> NC["NapCat<br/>OneBot v11"]
-    NC <--> BOT["qq-bot.js<br/>消息路由与标签拦截"]
-    BOT -->|"本地<br/>HTTP :3000"| SRV["server.js<br/>核心大脑<br/>记忆 / 情绪<br/>日记"]
-    SRV <--> CLOUD["云端大模型<br/>多Provider<br/>可切换"]
-    SRV -.->|"云端全挂<br/>时降级"| LOCAL["本地兜底<br/>8080 文本<br/>8081 视觉"]
-    WEB["网页控制台<br/>:3000"] --- SRV
-    CF["Cloudflare<br/>Tunnel"] --- WEB
-    DB[("SQLite<br/>记忆库")] --- SRV
-```
+![总体架构图](docs/architecture.png)
 
 **一次对话的完整旅程**：你在 QQ 发消息 → NapCat 转 OneBot 事件 → qq-bot.js 解析并做标签拦截 → server.js 挑选 Provider 调用大模型 → 回复写入 SQLite 记忆库 → 按 OneBot 段发回 QQ。中途模型可以下「标签指令」触发真实动作：搜索、点歌、语音、刷B站、写日记、查服务器——对话即操作。
 
