@@ -60,7 +60,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS bili_share (
     count INTEGER DEFAULT 0
 )`);
 
-
+// 🧠 重启后从数据库恢复会话记忆，让她记得你们聊过什么
+function restoreHistory() {
+    try {
+        const rows = db.prepare(`SELECT chat_id, role, content FROM messages WHERE chat_id != '' ORDER BY id DESC LIMIT 600`).all();
+        const buckets = new Map();
+        for (const r of rows) {
+            if (!buckets.has(r.chat_id)) buckets.set(r.chat_id, []);
+            buckets.get(r.chat_id).push({ role: r.role, content: r.content });
+        }
+        for (const [id, arr] of buckets) {
+            arr.reverse();
+            chatHistory.set(id, arr.slice(-100));
+        }
+        if (buckets.size) console.log(`🧠 记忆恢复：${buckets.size} 个会话，共 ${rows.length} 条对话`);
+    } catch (e) {
+        console.log('⚠️ 记忆恢复失败:', e.message);
+    }
+}
 function connect() {
     console.log('正在连接 NapCat WS...');
     ws = new WebSocket(wsUrl);
@@ -136,6 +153,20 @@ function connect() {
 
 // 🌟 全局拦截 #LouFung 状态查询指令（群聊私聊通用，群聊免@）
 text = text.trim();
+
+// 🌟 私聊指令：发 QQ 空间（仅爸爸可用）
+const qzoneMatch = text.match(/^去空间发(?:一段|个|条|布)?[:：\s]*[“"'「]?([\s\S]+?)[”"'」]?$/);
+if (qzoneMatch && !isGroup && String(senderQQ) === String(MY_QQ)) {
+    const content = qzoneMatch[1].trim();
+    if (content) {
+        ws.send(JSON.stringify({ action: 'send_qzone_msg', params: { content, ugc_right: 1 }, echo: 'qzone_' + Date.now() }));
+        ws.send(JSON.stringify({ action: isGroup ? 'send_group_msg' : 'send_private_msg',
+            params: isGroup ? { group_id: data.group_id, message: '发好啦～' } : { user_id: senderQQ, message: '发好啦～' } }));
+        console.log(`[小c 空间] 已发送: ${content.slice(0, 30)}`);
+        return;
+    }
+}
+
 if (text === '#LouFung') {
     console.log('⚡ [指令触发] 收到 #LouFung，正在获取红米状态...');
     try {
@@ -269,7 +300,7 @@ if (!isGroup || isAtMe) {
                     const res = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', senderName: senderName })
+                        body: JSON.stringify({ messages: messages, body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', chatId: chatId }), senderName: senderName })
                     });
                     const json = await res.json();
                     
@@ -505,4 +536,5 @@ reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
     ws.onclose = () => { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(connect, 5000); };
 }
 
+restoreHistory();
 connect();

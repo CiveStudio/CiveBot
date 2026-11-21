@@ -409,8 +409,9 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                             };
                             
                             const qqSource = payload.channel || 'qq_private';
-                            try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('user', userContent, qqSource); } catch(e){}
-                            try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('assistant', memoryContent, qqSource); } catch(e){}
+                                                        const chatIdForDb = payload.chatId || '';
+                            try { db.prepare('INSERT INTO messages (role, content, source, chat_id) VALUES (?, ?, ?, ?)').run('user', userContent, qqSource, chatIdForDb); } catch(e){}
+                            try { db.prepare('INSERT INTO messages (role, content, source, chat_id) VALUES (?, ?, ?, ?)').run('assistant', memoryContent, qqSource, chatIdForDb); } catch(e){}
 
                             res.writeHead(200, { 'Content-Type': 'application/json' });
                             res.end(JSON.stringify(openAiResponse));

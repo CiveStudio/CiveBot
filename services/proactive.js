@@ -216,9 +216,9 @@ module.exports = function createProactive({ db, bili, callV1, persona, laws, cha
         while (hist.length > 200) hist.shift();
         chatHistory.set(chatId, hist);
 
-        try {
-            db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)')
-                .run('assistant', line, isGroup ? 'qq_group' : 'qq_private');
+                try {
+            db.prepare('INSERT INTO messages (role, content, source, chat_id) VALUES (?, ?, ?, ?)')
+                .run('assistant', line, isGroup ? 'qq_group' : 'qq_private', chatId);
         } catch (e) { /* 忽略 */ }
         return true;
     }

@@ -35,3 +35,12 @@ try {
 } catch (e) {
     console.log("⚠️ 数据库升级检查跳过:", e.message);
 }
+
+// 动态检查并添加 chat_id 字段（会话记忆恢复用）
+try {
+    const cols = db.prepare("PRAGMA table_info(messages)").all();
+    if (!cols.some(c => c.name === 'chat_id')) {
+        db.exec("ALTER TABLE messages ADD COLUMN chat_id TEXT DEFAULT ''");
+        console.log("✅ 数据库升级：已添加 chat_id 字段，用于会话记忆恢复");
+    }
+} catch (e) {}
