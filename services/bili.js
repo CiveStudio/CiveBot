@@ -12,7 +12,7 @@ const crypto = require('crypto');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const REFERER = 'https://www.bilibili.com/';
-const COOKIE_PATH = path.join(__dirname, 'bili-cookie.json');
+const COOKIE_PATH = path.join(__dirname, '..', 'bili-cookie.json');
 
 // WBI 混淆表（B 站公开算法）
 const MIXIN_TAB = [

@@ -6,6 +6,10 @@
 - **新建 tools/ 手动工具区**：push_diary.js、send_diary.js 迁入，require 路径改 `../db`——services/ 只留被 require 的能力模块，手动 CLI 另立门户，语义不再混装。
 - **架构图定稿 PNG**：Mermaid 移动端截断顽疾终结——方案三迭（mermaid.ink 三连翻车：Termux 无 /tmp、粘贴断行、base64 字符集非 URL-safe），最终「本地现算 URL-safe base64 + 预渲染 PNG」定版；新图含 services 模块群 / prompts / tools 全节点。
 - **戳一戳署名修复**：notice 事件无 sender 字段导致私聊戳一戳显示「群友」——私聊 user_id === MY_QQ 时认定 LouFung，记忆库不再错记陌生群友。
+- **进一步优化重构**：主动说话引擎（305 行）独立成 `services/proactive.js`（工厂注入 db/bili/callV1/persona/laws/chatHistory/ws），网页解析独立成 `services/webread.js`，时间与文本工具独立成 `utils.js`，引擎配置独立成 `config/proactive.js`。qq-bot.js 从 875 行 / 45.6KB 瘦到约 500 行 / 28.5KB，只剩「连接、路由、发送」本职。
+- **两个潜伏地雷一并拆除**：① `think()` 里的 `persona.persona.buildSystemPrompt` 双层洋葱——主动说话一触发必炸（20-40 分钟才开一次口，所以一直没撞上）；② 头部 `const { JUDGE_SYS }` 解构但调用点全写 `laws.JUDGE_SYS`——B站安利、B站浏览、唱歌即兴三条链路一碰就崩。拆分过程中全部修正，回归测试通过。
+- **callV1 独立成模块**：`services/llm.js` 统一 `/v1` 聊天调用，qq-bot.js 与主动说话引擎共用。拆分过程中曾因删除区间覆盖 callV1 定义导致启动崩溃，最终以「独立模块 + 单行 require」彻底解决——主文件从此不再内联长函数。
+- **bili cookie 路径修复**：bili.js 迁入 `services/` 后 `__dirname` 变化，找不到根目录的 `bili-cookie.json`，改为 `path.join(__dirname, '..', 'bili-cookie.json')`。教训：文件搬家后，所有依赖 `__dirname` 的资源路径都要跟着补 `..`。
 
 ## [v261120] - 2026-11-20
 ### 🧩 模块化重构：千行大文件解体，五模块各就其位
