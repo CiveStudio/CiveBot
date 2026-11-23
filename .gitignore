@@ -15,3 +15,8 @@ bili-cookie.json
 # 音乐缓存
 /cache_music/
 /public/cache_music/
+
+# 备份/临时文件
+*.broken
+*.bak
+*.log
