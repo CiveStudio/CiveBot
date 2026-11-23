@@ -143,8 +143,9 @@ module.exports = function createProactive({ db, bili, callV1, persona, laws, cha
         const maxLen = isGroup ? PROACTIVE.groupMaxLen : PROACTIVE.privateMaxLen;
         const avoid = recentProactive.slice(-5).map((s) => '· ' + s).join('\n') || '· （还没有）';
 
-        const userParts = [
+                const userParts = [
             '【主动发言任务】' + clues.text,
+            ...(isGroup ? ['【身份提醒】这是群聊，你现在是主动在群里开口。听众是群友，不是爸爸——绝对禁止叫任何人“爸爸”。提到爸爸时只能说“LouFung”或“我爸爸”。'] : []),
             `请主动说一句话，不超过 ${maxLen} 字，像在 QQ 上随口说的。不要颜文字，不要换行，不要问"有什么可以帮你"。`,
             '不要重复你最近说过的话：',
             avoid,
