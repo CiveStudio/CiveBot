@@ -490,11 +490,15 @@ if (reply.includes('[TOOL:WRITE_DIARY]')) {
 // 清理换行
 reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
                     
-                    if (isGroup && reply.length > 60 && !reply.includes('```')) {
-                        let subReply = reply.substring(0, 60);
+                                        if (isGroup && reply.length > 60 && !reply.includes('```')) {
+                        // 🔗 链接保护：群聊截断时别腰斩 URL
+                        const urls = reply.match(/https?:\/\/\S+/g) || [];
+                        let body = reply.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+                        const subReply = body.substring(0, 60);
                         const lastPunc = Math.max(subReply.lastIndexOf('。'), subReply.lastIndexOf('！'), subReply.lastIndexOf('？'), subReply.lastIndexOf('!'), subReply.lastIndexOf('?'), subReply.lastIndexOf('~'), subReply.lastIndexOf('～'));
-                        if (lastPunc > 20) reply = subReply.substring(0, lastPunc + 1);
-                        else reply = subReply.substring(0, 50);
+                        if (lastPunc > 20) body = subReply.substring(0, lastPunc + 1);
+                        else body = subReply.substring(0, 50);
+                        reply = urls.length ? body + ' ' + urls[urls.length - 1] : body;
                     }
 
                     if (!reply) reply = "哼，本刺猬已经去办了！";
