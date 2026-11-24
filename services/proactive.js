@@ -117,7 +117,7 @@ module.exports = function createProactive({ db, bili, callV1, persona, laws, cha
                 const v = await bili.pickFeed();
                 if (v) {
                     video = v;
-                    parts.push(`你刚刷到B站一个视频《${v.title}》（${v.owner || '未知UP'}），简介：${String(v.desc || '').slice(0, 60)}。视频链接：${v.link}。想聊它就把链接贴在句尾。`);
+                                        parts.push(`你刚刷到B站一个视频《${v.title}》（${v.owner || '未知UP'}），简介：${String(v.desc || '').slice(0, 60)}。聊到它时不用写链接，系统会自动补上，你只管自然地聊内容。`);
                 }
             } catch (e) { /* 刷不到就算了 */ }
         }
@@ -127,9 +127,9 @@ module.exports = function createProactive({ db, bili, callV1, persona, laws, cha
     }
 
     function appendVideoLink(line, video, isGroup) {
-        // 私聊才自动拼链接；她自己带了就不重复
+        // 🛡️ 先清掉模型自己写的任何链接（含残链），链接一律由代码注入
+        line = line.replace(/https?:\/\/\S*/g, '').replace(/\s+/g, ' ').trim();
         if (!video || !video.link || isGroup) return line;
-        if (line.includes('b23.tv') || (video.bvid && line.includes(video.bvid))) return line;
         const t = video.title || '';
         const mentioned = ['视频', '刷到', '链接', '快看', '看看'].some((k) => line.includes(k)) || (t.length >= 6 && line.includes(t.slice(0, 6)));
         return mentioned ? line + ' ' + video.link : line;
@@ -158,10 +158,11 @@ module.exports = function createProactive({ db, bili, callV1, persona, laws, cha
         let reply = await callV1(systemPrompt, userContent, isGroup ? 'qq_group' : 'qq_private');
         if (!reply) return null;
 
-        reply = reply.replace(/\[SEARCH:[^\]]*\]/g, '').replace(/\[TOOL:[^\]]*\]/g, '').trim();
+                reply = reply.replace(/\[SEARCH:[^\]]*\]/g, '').replace(/\[TOOL:[^\]]*\]/g, '').trim();
+        // 🛡️ 链接一律由代码注入：先清掉模型写的任何 URL（含残链/幻觉链）
+        reply = reply.replace(/https?:\/\/\S*/g, '').replace(/\s+/g, ' ').trim();
         reply = clampLine(reply, maxLen);
         reply = appendVideoLink(reply, clues.video, isGroup);
-        return reply || null;
     }
 
     // 🛰️ B站安利流程：刷到 → 粗判 → 精读 → 终判 → 一句安利

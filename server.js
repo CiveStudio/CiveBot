@@ -468,8 +468,9 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
                     try { db.prepare('INSERT INTO messages (role, content, source) VALUES (?, ?, ?)').run('user', contentStr, 'web'); } catch(e) {}
                 }
 
-                payload.messages = messages;
-                payload.model = providers[0].model;
+    payload.messages = messages;
+    payload.model = providers[0].model;
+    if (!payload.max_tokens) payload.max_tokens = 2048;   // 🛡️ 防止 GLM 思考模式吃光预算、把回复截在链接中间
                 makeRequest(providers[0], payload, res, 0);
             } catch (err) { res.writeHead(500); res.end(JSON.stringify({ error: { message: '内部错误' } })); }
         });
