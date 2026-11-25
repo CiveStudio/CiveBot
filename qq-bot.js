@@ -32,6 +32,7 @@ const tts = require('./services/tts');
 const music = require('./services/music');
 const vision = require('./services/vision');
 const { callV1 } = require('./services/llm');
+const hormones = require('./services/hormones')(db);
 
 const { clampLine } = require('./utils');
 const webread = require('./services/webread')({ bili });
@@ -146,9 +147,10 @@ function connect() {
                 }
             }
 
-            // 🌟 有人说话就重置"被冷落"计数，并且 10 分钟内不主动插嘴
+                        // 🌟 有人说话就重置"被冷落"计数，并且 10 分钟内不主动插嘴
             if (chatId) {
                 proactive.noteHumanActivity();
+                hormones.onMessage(text);
             }
 
 // 🌟 全局拦截 #LouFung 状态查询指令（群聊私聊通用，群聊免@）
@@ -300,7 +302,7 @@ if (!isGroup || isAtMe) {
                     const res = await fetch('http://127.0.0.1:3000/v1/chat/completions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messages: messages, body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', chatId: chatId }), senderName: senderName })
+                        body: JSON.stringify({ messages: messages, channel: isGroup ? 'qq_group' : 'qq_private', chatId: chatId, senderName: senderName, hormones: hormones.snapshot() + ' ' + (hormones.guidance() || '') })
                     });
                     const json = await res.json();
                     
@@ -540,5 +542,6 @@ reply = reply.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
     ws.onclose = () => { clearTimeout(reconnectTimer); reconnectTimer = setTimeout(connect, 5000); };
 }
 
+setInterval(() => hormones.tick(), 10 * 60 * 1000);
 restoreHistory();
 connect();

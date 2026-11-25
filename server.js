@@ -347,8 +347,9 @@ const server = http.createServer((req, res) => {
                     }
 
                                         // 🌟 缓存优化①v2：system 一字不动！日记+情绪+群友身份全下沉到尾部
-                                        dynamicTail = (isGroupChat && payload.senderName ? `\n【当前和你说话的群友】：${payload.senderName}` : '')
-                        + `\n【当前情绪状态】：${moodDesc}。如果情绪极度委屈，请保持冷漠，群聊回复不超过5个字。`;
+                                                                                dynamicTail = (isGroupChat && payload.senderName ? `\n【当前和你说话的群友】：${payload.senderName}` : '')
+                        + `\n【当前情绪状态】：${moodDesc}。如果情绪极度委屈，请保持冷漠，群聊回复不超过5个字。`
+                        + (payload.hormones ? `\n${payload.hormones}` : '');
                 } catch(e) {}
 
                 const tn = new Date();
