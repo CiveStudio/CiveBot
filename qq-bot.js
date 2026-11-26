@@ -33,6 +33,9 @@ const music = require('./services/music');
 const vision = require('./services/vision');
 const { callV1 } = require('./services/llm');
 const hormones = require('./services/hormones')(db);
+const loadPlugins = require('./services/plugin-loader');
+const PLUGINS = loadPlugins(process.env.PLUGINS_DIR || `${process.env.HOME}/CiveBot-Extensions/tools`);
+const pluginCtx = { getWs: () => ws, db, callV1, bili, hormones };
 
 const { clampLine } = require('./utils');
 const webread = require('./services/webread')({ bili });
@@ -155,6 +158,23 @@ function connect() {
 
 // 🌟 全局拦截 #LouFung 状态查询指令（群聊私聊通用，群聊免@）
 text = text.trim();
+
+// 🔌 插件调度：先让扩展仓库的插件处理
+for (const p of PLUGINS) {
+    try {
+        if (p.match(text, { isGroup, senderQQ, senderName, chatId })) {
+            const out = await p.handle(text, { ...pluginCtx, isGroup, senderQQ, senderName, chatId });
+            if (out) {
+                const action = isGroup ? 'send_group_msg' : 'send_private_msg';
+                const params = isGroup ? { group_id: data.group_id, message: String(out) } : { user_id: senderQQ, message: String(out) };
+                ws.send(JSON.stringify({ action, params }));
+                return;
+            }
+        }
+    } catch (e) {
+        console.log(`⚠️ 插件 ${p.name} 出错:`, e.message);
+    }
+}
 
 // 🌟 私聊指令：发 QQ 空间（仅爸爸可用）
 const qzoneMatch = text.match(/^去空间发(?:一段|个|条|布)?[:：\s]*[“"'「]?([\s\S]+?)[”"'」]?$/);
