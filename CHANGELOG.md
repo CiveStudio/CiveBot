@@ -1,5 +1,12 @@
 # 🦔 CiveBot (小c) 编年史与更新日志
 
+## [v261127] - 2026-11-27
+### 🔌 插件架构：主体与扩展分离
+- **插件加载器**：`services/plugin-loader.js` 扫描 `PLUGINS_DIR`（默认 `~/CiveBot-Extensions/tools`），启动时自动注册实现 `{ name, match, handle }` 的插件——以后加玩法只往扩展仓库丢文件，主仓库一行不动。
+- **扩展仓库 CiveBot-Extensions 上线**：独立仓库托管插件，首批 `fortune`（今日签）、`dice`（骰子/硬币）、`rps`（猜拳）、`token-stats`（Token 面板），附插件模板与开发指南。
+- **Token 消耗统计**：`/v1` 主链路解析模型响应 `usage`（兼容 DeepSeek / 智谱 / OpenAI），写入 `token_usage` 表；`/stats` 或「token消耗」指令按 Provider 分组显示今日/累计的 总消耗 / 输入(缓存命中) / 输入(未命中) / 输出。
+- **QQ 主链路修复**：通道字段丢失导致群聊被按私聊处理的问题已修复，激素状态与 `usage` 记录随主请求一并传递。
+
 ## [v261125] - 2026-11-25
 ### 🧬 激素系统：她有了「身体」
 - **六项生理指标上线**：`services/hormones.js` 管理饱腹度 / 困倦度 / 无聊度 / 多巴胺 / 血清素 / 皮质醇，0–100 连续变化，SQLite 持久化（`hormones` 表），重启不丢。
