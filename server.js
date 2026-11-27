@@ -132,11 +132,18 @@ function makeRequest(provider, payload, res, fallbackIndex = 0) {
             res.end();
             if (payload.stream && fullContent) {
                 try { db.prepare("INSERT INTO messages (role, content, source) VALUES (?, ?, 'web')").run('assistant', fullContent); } catch(e){}
-            } else if (!payload.stream) {
+                        } else if (!payload.stream) {
                 try {
                     const parsed = JSON.parse(fullContent);
                     if (parsed.choices && parsed.choices[0] && parsed.choices[0].message) {
                         db.prepare("INSERT INTO messages (role, content, source) VALUES (?, ?, 'web')").run('assistant', parsed.choices[0].message.content);
+                    }
+                    // 💰 Token 统计入库（兼容 DeepSeek / 智谱 / OpenAI 的 usage 字段）
+                    if (parsed.usage) {
+                        const u = parsed.usage;
+                        const cached = u.prompt_cache_hit_tokens || u.cached_tokens || (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0;
+                        db.prepare('INSERT INTO token_usage (provider, model, prompt_tokens, cached_tokens, completion_tokens) VALUES (?, ?, ?, ?, ?)')
+                          .run(provider.name || provider.model, provider.model, u.prompt_tokens || u.input_tokens || 0, cached, u.completion_tokens || u.output_tokens || 0);
                     }
                 } catch(e) {}
             }
@@ -397,6 +404,12 @@ const timeStr = `${tn.getMonth() + 1}月${tn.getDate()}日 ${String(tn.getHours(
 
                             const u = aiJson.usage || {};
                             console.log(`💰 缓存命中: ${u.prompt_cache_hit_tokens || 0} / 输入共 ${(u.prompt_cache_hit_tokens || 0) + (u.prompt_cache_miss_tokens || 0)} tokens`);
+                            // 💰 Token 统计入库（兼容 DeepSeek / 智谱 / OpenAI 的 usage 字段）
+                            try {
+                                const cachedTokens = u.prompt_cache_hit_tokens || u.cached_tokens || (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) || 0;
+                                db.prepare('INSERT INTO token_usage (provider, model, prompt_tokens, cached_tokens, completion_tokens) VALUES (?, ?, ?, ?, ?)')
+                                  .run(provider.name || provider.model, provider.model, u.prompt_tokens || u.input_tokens || 0, cachedTokens, u.completion_tokens || u.output_tokens || 0);
+                            } catch (e) { console.log('⚠️ token 统计入库失败:', e.message); }
                             const replyContent = aiJson.choices[0].message.content;
                                                         const memoryContent = String(replyContent || '')
                                 .replace(/\[SING[:：]\s*([^\]]+)\]/g, '(给爸爸唱了一小段：$1)')

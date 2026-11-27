@@ -44,3 +44,14 @@ try {
         console.log("✅ 数据库升级：已添加 chat_id 字段，用于会话记忆恢复");
     }
 } catch (e) {}
+
+// 💰 Token 消耗统计表
+db.exec(`CREATE TABLE IF NOT EXISTS token_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    prompt_tokens INTEGER DEFAULT 0,
+    cached_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
